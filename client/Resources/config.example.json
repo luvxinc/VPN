@@ -1,0 +1,4 @@
+{
+  "auth_url": "https://YOUR_SERVER_IP:9443",
+  "cert_fingerprint": "YOUR_CERT_SHA256_FINGERPRINT_UPPERCASE_NO_COLONS"
+}

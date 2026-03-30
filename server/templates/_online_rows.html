@@ -1,0 +1,33 @@
+{% if online_sessions %}
+<table class="w-full text-sm">
+  <thead>
+    <tr class="text-gray-400 text-xs uppercase border-b border-gray-800">
+      <th class="px-4 py-2 text-left">用户</th>
+      <th class="px-4 py-2 text-left">IP / 位置</th>
+      <th class="px-4 py-2 text-left">连接时间</th>
+      <th class="px-4 py-2 text-right">上传</th>
+      <th class="px-4 py-2 text-right">下载</th>
+    </tr>
+  </thead>
+  <tbody class="divide-y divide-gray-800">
+    {% for s in online_sessions %}
+    <tr class="hover:bg-gray-800/50">
+      <td class="px-4 py-3 font-medium text-white">{{ s.username }}</td>
+      <td class="px-4 py-3 text-gray-300">
+        {{ s.login_ip }}
+        {% if s.login_country and s.login_country != 'Unknown' %}
+        <span class="text-gray-500 text-xs ml-1">{{ s.login_country }}{% if s.login_city and s.login_city != 'Unknown' %}, {{ s.login_city }}{% endif %}</span>
+        {% endif %}
+      </td>
+      <td class="px-4 py-3 text-gray-400 text-xs">
+        {{ s.connected_at.strftime('%m-%d %H:%M') if s.connected_at else '—' }}
+      </td>
+      <td class="px-4 py-3 text-right text-blue-400 text-xs">{{ '%.1f' % (s.upload_bytes / 1048576) }} MB</td>
+      <td class="px-4 py-3 text-right text-purple-400 text-xs">{{ '%.1f' % (s.download_bytes / 1048576) }} MB</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<div class="px-4 py-10 text-center text-gray-500">暂无在线用户</div>
+{% endif %}

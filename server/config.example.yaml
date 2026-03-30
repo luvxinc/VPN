@@ -1,0 +1,58 @@
+database:
+  url: "postgresql://YOUR_USER@localhost/weiai_vpn"
+  pool_size: 10
+
+redis:
+  url: "redis://localhost:6379/0"
+
+server:
+  ip: "YOUR_SERVER_IP"
+  port: 443
+  public_key: "YOUR_REALITY_PUBLIC_KEY"
+  private_key: "YOUR_REALITY_PRIVATE_KEY"
+  short_id: "YOUR_SHORT_ID"
+  server_name: "www.apple.com"
+
+auth:
+  jwt_secret: "CHANGE_ME_use_at_least_32_random_chars"
+  jwt_expiry_minutes: 15
+  refresh_expiry_hours: 24
+
+admin:
+  allowed_lan_prefixes:
+    - "127."
+    - "192.168."
+    - "10."
+    - "172.16."
+    - "172.17."
+    - "172.18."
+    - "172.19."
+    - "172.20."
+  username: "admin"
+  # Generate with: python3 -c "import bcrypt; print(bcrypt.hashpw(b'yourpassword', bcrypt.gensalt()).decode())"
+  password_hash: ""
+
+certs:
+  cert_path: "certs/server.crt"
+  key_path: "certs/server.key"
+
+sing_box:
+  config_path: "sing-box-server.json"
+  binary_path: "/usr/local/bin/sing-box"
+  clash_api_url: "http://127.0.0.1:9090"
+
+geoip:
+  # Download free GeoLite2-City.mmdb from https://dev.maxmind.com/geoip/geolite2-free-geolocation-data
+  db_path: "GeoLite2-City.mmdb"
+
+log:
+  retention_days: 90
+  max_domains_per_user_per_day: 500
+
+client:
+  # Reject clients older than this version (returns HTTP 426 Upgrade Required)
+  min_version: "1.0.0"
+  # URL shown to users when client is outdated
+  download_url: "https://YOUR_SERVER_IP:9443/download/client"
+  # Path to the distributable .zip (relative to server/ or absolute)
+  client_zip_path: "../client/dist/为爱鼓掌.zip"

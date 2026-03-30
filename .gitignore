@@ -1,0 +1,28 @@
+# ── Server secrets ────────────────────────────────────────────────────────────
+server/config.yaml
+server/certs/
+server/GeoLite2-City.mmdb
+server/session.json
+server/sing-box-server.json
+
+# ── Client secrets ────────────────────────────────────────────────────────────
+client/Resources/config.json
+client/Resources/sing-box
+
+# ── Build output ──────────────────────────────────────────────────────────────
+client/dist/
+client/.build/
+.build/
+
+# ── Python ────────────────────────────────────────────────────────────────────
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+*.egg-info/
+
+# ── macOS ─────────────────────────────────────────────────────────────────────
+.DS_Store
+
+# ── Claude Code ───────────────────────────────────────────────────────────────
+CLAUDE.md
