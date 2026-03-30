@@ -6,11 +6,8 @@
     <string>com.weiai.authserver</string>
     <key>ProgramArguments</key>
     <array>
-        <string>/usr/bin/python3</string>
-        <string>/Users/YOUR_USERNAME/Developer/VPN/server/auth_server.py</string>
+        <string>/Users/YOUR_USERNAME/Developer/VPN/server/authserver</string>
     </array>
-    <key>WorkingDirectory</key>
-    <string>/Users/YOUR_USERNAME/Developer/VPN/server</string>
     <key>RunAtLoad</key>
     <true/>
     <key>KeepAlive</key>
@@ -19,6 +16,8 @@
     <dict>
         <key>PATH</key>
         <string>/usr/local/bin:/usr/bin:/bin</string>
+        <key>WEIAI_CONFIG</key>
+        <string>/Users/YOUR_USERNAME/Developer/VPN/server/config.yaml</string>
     </dict>
     <key>StandardOutPath</key>
     <string>/tmp/weiai-auth.log</string>

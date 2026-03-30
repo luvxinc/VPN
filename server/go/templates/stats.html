@@ -1,0 +1,99 @@
+{{define "title"}}流量统计 — 为爱鼓掌 VPN{{end}}
+
+<div class="mb-6">
+  <h1 class="text-2xl font-bold text-white">流量统计</h1>
+  <p class="text-gray-400 text-sm mt-1">按用户查看上传/下载用量</p>
+</div>
+
+<!-- Filter form -->
+<form method="get" class="bg-gray-900 border border-gray-800 rounded-xl p-4 mb-6 flex flex-wrap gap-4 items-end">
+  <div>
+    <label class="block text-xs text-gray-400 mb-1">用户</label>
+    <select name="user_id" class="bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:ring-2 focus:ring-red-500">
+      <option value="">— 选择用户 —</option>
+      {{range .Users}}
+      <option value="{{.ID}}" {{if eq $.SelectedUser .ID.String}}selected{{end}}>{{.Username}}</option>
+      {{end}}
+    </select>
+  </div>
+  <div>
+    <label class="block text-xs text-gray-400 mb-1">时间段</label>
+    <select name="period" onchange="document.getElementById('custom-dates').classList.toggle('hidden', this.value !== 'custom')"
+            class="bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:ring-2 focus:ring-red-500">
+      <option value="today" {{if eq .Period "today"}}selected{{end}}>今天</option>
+      <option value="week" {{if eq .Period "week"}}selected{{end}}>本周（7天）</option>
+      <option value="month" {{if eq .Period "month"}}selected{{end}}>本月</option>
+      <option value="custom" {{if eq .Period "custom"}}selected{{end}}>自定义</option>
+    </select>
+  </div>
+  <div id="custom-dates" class="{{if eq .Period "custom"}}flex{{else}}hidden{{end}} gap-3">
+    <div>
+      <label class="block text-xs text-gray-400 mb-1">开始</label>
+      <input type="date" name="from" value="{{.DateFrom}}"
+             class="bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none">
+    </div>
+    <div>
+      <label class="block text-xs text-gray-400 mb-1">结束</label>
+      <input type="date" name="to" value="{{.DateTo}}"
+             class="bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none">
+    </div>
+  </div>
+  <button type="submit"
+          class="bg-red-600 hover:bg-red-500 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors">
+    查询
+  </button>
+</form>
+
+{{if .SelectedUser}}
+<!-- Summary cards -->
+<div class="grid grid-cols-3 gap-4 mb-6">
+  <div class="bg-gray-900 border border-gray-800 rounded-xl p-4">
+    <p class="text-sm text-gray-400">总上传</p>
+    <p class="text-2xl font-bold text-blue-400 mt-1">{{toGB .Summary.Upload}} GB</p>
+  </div>
+  <div class="bg-gray-900 border border-gray-800 rounded-xl p-4">
+    <p class="text-sm text-gray-400">总下载</p>
+    <p class="text-2xl font-bold text-purple-400 mt-1">{{toGB .Summary.Download}} GB</p>
+  </div>
+  <div class="bg-gray-900 border border-gray-800 rounded-xl p-4">
+    <p class="text-sm text-gray-400">连接次数</p>
+    <p class="text-2xl font-bold text-green-400 mt-1">{{.Summary.Sessions}}</p>
+  </div>
+</div>
+
+{{if .DailyRows}}
+<div class="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
+  <div class="px-4 py-3 border-b border-gray-800">
+    <span class="text-sm text-gray-400">每日明细</span>
+  </div>
+  <table class="w-full text-sm">
+    <thead>
+      <tr class="text-gray-400 text-xs uppercase border-b border-gray-800">
+        <th class="px-4 py-2 text-left">日期</th>
+        <th class="px-4 py-2 text-right">上传</th>
+        <th class="px-4 py-2 text-right">下载</th>
+        <th class="px-4 py-2 text-right">合计</th>
+      </tr>
+    </thead>
+    <tbody class="divide-y divide-gray-800">
+      {{range .DailyRows}}
+      <tr class="hover:bg-gray-800/50">
+        <td class="px-4 py-2 text-gray-200">{{.Date.Format "2006-01-02"}}</td>
+        <td class="px-4 py-2 text-right text-blue-400 text-xs">{{toMB .UploadBytes}} MB</td>
+        <td class="px-4 py-2 text-right text-purple-400 text-xs">{{toMB .DownloadBytes}} MB</td>
+        <td class="px-4 py-2 text-right text-gray-300 text-xs">{{toMB (add .UploadBytes .DownloadBytes)}} MB</td>
+      </tr>
+      {{end}}
+    </tbody>
+  </table>
+</div>
+{{else}}
+<div class="bg-gray-900 border border-gray-800 rounded-xl px-4 py-10 text-center text-gray-500">
+  该时间段内无流量记录
+</div>
+{{end}}
+{{else}}
+<div class="bg-gray-900 border border-gray-800 rounded-xl px-4 py-10 text-center text-gray-500">
+  请选择用户后点击查询
+</div>
+{{end}}

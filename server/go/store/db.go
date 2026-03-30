@@ -1,0 +1,467 @@
+package store
+
+import (
+	"context"
+	"fmt"
+	"time"
+
+	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/luvxinc/vpn/server/models"
+)
+
+type DB struct {
+	pool *pgxpool.Pool
+}
+
+func NewDB(ctx context.Context, dsn string, poolSize int) (*DB, error) {
+	cfg, err := pgxpool.ParseConfig(dsn)
+	if err != nil {
+		return nil, fmt.Errorf("db: parse dsn: %w", err)
+	}
+	cfg.MaxConns = int32(poolSize)
+	cfg.ConnConfig.DefaultQueryExecMode = pgx.QueryExecModeCacheDescribe
+
+	// Register uuid.UUID codec
+	cfg.AfterConnect = func(ctx context.Context, conn *pgx.Conn) error {
+		conn.TypeMap().RegisterDefaultPgType(uuid.UUID{}, "uuid")
+		return nil
+	}
+
+	pool, err := pgxpool.NewWithConfig(ctx, cfg)
+	if err != nil {
+		return nil, fmt.Errorf("db: create pool: %w", err)
+	}
+	return &DB{pool: pool}, nil
+}
+
+func MustNewDB(ctx context.Context, dsn string, poolSize int) *DB {
+	db, err := NewDB(ctx, dsn, poolSize)
+	if err != nil {
+		panic(err)
+	}
+	return db
+}
+
+func (d *DB) Close() {
+	d.pool.Close()
+}
+
+func (d *DB) Pool() *pgxpool.Pool {
+	return d.pool
+}
+
+// GetUserByUsername returns (id, passwordHash, isActive) or pgx.ErrNoRows.
+func (d *DB) GetUserByUsername(ctx context.Context, username string) (id uuid.UUID, hash string, active bool, err error) {
+	row := d.pool.QueryRow(ctx,
+		"SELECT id, password_hash, is_active FROM users WHERE username=$1",
+		username,
+	)
+	err = row.Scan(&id, &hash, &active)
+	return
+}
+
+// GetDeviceByFingerprint returns (id, isActive) or pgx.ErrNoRows.
+func (d *DB) GetDeviceByFingerprint(ctx context.Context, fingerprint string) (id uuid.UUID, active bool, userID uuid.UUID, err error) {
+	row := d.pool.QueryRow(ctx,
+		"SELECT id, is_active, user_id FROM devices WHERE device_fingerprint=$1",
+		fingerprint,
+	)
+	err = row.Scan(&id, &active, &userID)
+	return
+}
+
+// UpsertDevice inserts or re-activates a device. Returns (id, isActive).
+func (d *DB) UpsertDevice(ctx context.Context, userID uuid.UUID, fingerprint, name string) (id uuid.UUID, active bool, err error) {
+	row := d.pool.QueryRow(ctx,
+		`INSERT INTO devices (user_id, device_fingerprint, device_name)
+		 VALUES ($1, $2, $3)
+		 ON CONFLICT (device_fingerprint) DO UPDATE SET is_active=true, last_seen=NOW()
+		 RETURNING id, is_active`,
+		userID, fingerprint, name,
+	)
+	err = row.Scan(&id, &active)
+	return
+}
+
+// DeactivateDeviceSessions marks all active sessions for a device as inactive.
+func (d *DB) DeactivateDeviceSessions(ctx context.Context, deviceID uuid.UUID) error {
+	_, err := d.pool.Exec(ctx,
+		"UPDATE sessions SET is_active=false, disconnected_at=NOW() WHERE device_id=$1 AND is_active=true",
+		deviceID,
+	)
+	return err
+}
+
+// CreateSession inserts a new session and returns its UUID.
+func (d *DB) CreateSession(ctx context.Context, userID, deviceID uuid.UUID, vlessUUID, loginIP, country, city string) (uuid.UUID, error) {
+	var id uuid.UUID
+	err := d.pool.QueryRow(ctx,
+		`INSERT INTO sessions (user_id, device_id, vless_uuid, login_ip, login_country, login_city)
+		 VALUES ($1, $2, $3, $4::inet, $5, $6) RETURNING id`,
+		userID, deviceID, vlessUUID, loginIP, country, city,
+	).Scan(&id)
+	return id, err
+}
+
+// DeactivateSession marks one session inactive by session UUID.
+func (d *DB) DeactivateSession(ctx context.Context, sessionID uuid.UUID) error {
+	_, err := d.pool.Exec(ctx,
+		"UPDATE sessions SET is_active=false, disconnected_at=NOW() WHERE id=$1",
+		sessionID,
+	)
+	return err
+}
+
+// UpdateDeviceLastSeen sets last_seen = NOW() for a device.
+func (d *DB) UpdateDeviceLastSeen(ctx context.Context, deviceID uuid.UUID) error {
+	_, err := d.pool.Exec(ctx,
+		"UPDATE devices SET last_seen=NOW() WHERE id=$1",
+		deviceID,
+	)
+	return err
+}
+
+// GetActiveSessionsByUser returns all active sessions for a user (for kick).
+type ActiveSessionRow struct {
+	ID          uuid.UUID
+	DeviceID    uuid.UUID
+	VlessUUID   string
+}
+
+func (d *DB) GetActiveSessionsByUser(ctx context.Context, userID uuid.UUID) ([]ActiveSessionRow, error) {
+	rows, err := d.pool.Query(ctx,
+		"SELECT id, device_id, vless_uuid FROM sessions WHERE user_id=$1 AND is_active=true",
+		userID,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []ActiveSessionRow
+	for rows.Next() {
+		var r ActiveSessionRow
+		if err := rows.Scan(&r.ID, &r.DeviceID, &r.VlessUUID); err != nil {
+			return nil, err
+		}
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
+// GetDeviceFingerprintByID returns the device_fingerprint for a device ID.
+func (d *DB) GetDeviceFingerprintByID(ctx context.Context, deviceID uuid.UUID) (string, error) {
+	var fp string
+	err := d.pool.QueryRow(ctx,
+		"SELECT device_fingerprint FROM devices WHERE id=$1",
+		deviceID,
+	).Scan(&fp)
+	return fp, err
+}
+
+// DeactivateUserSessions marks all active sessions for a user as inactive.
+func (d *DB) DeactivateUserSessions(ctx context.Context, userID uuid.UUID) error {
+	_, err := d.pool.Exec(ctx,
+		"UPDATE sessions SET is_active=false, disconnected_at=NOW() WHERE user_id=$1 AND is_active=true",
+		userID,
+	)
+	return err
+}
+
+// GetOnlineSessions returns all currently active sessions with user info.
+func (d *DB) GetOnlineSessions(ctx context.Context) ([]models.OnlineSession, error) {
+	rows, err := d.pool.Query(ctx,
+		`SELECT s.id, u.username, s.login_ip::text, s.login_country, s.login_city,
+		        s.connected_at, s.upload_bytes, s.download_bytes
+		 FROM sessions s JOIN users u ON s.user_id = u.id
+		 WHERE s.is_active = true
+		 ORDER BY s.connected_at DESC`,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []models.OnlineSession
+	for rows.Next() {
+		var s models.OnlineSession
+		if err := rows.Scan(&s.ID, &s.Username, &s.LoginIP, &s.LoginCountry, &s.LoginCity,
+			&s.ConnectedAt, &s.UploadBytes, &s.DownloadBytes); err != nil {
+			return nil, err
+		}
+		out = append(out, s)
+	}
+	return out, rows.Err()
+}
+
+// GetTodayTrafficTotals returns sum upload and download bytes for today.
+func (d *DB) GetTodayTrafficTotals(ctx context.Context) (upload, download int64, err error) {
+	err = d.pool.QueryRow(ctx,
+		`SELECT COALESCE(SUM(s.upload_bytes),0), COALESCE(SUM(s.download_bytes),0)
+		 FROM sessions s
+		 WHERE DATE(s.connected_at) = CURRENT_DATE`,
+	).Scan(&upload, &download)
+	return
+}
+
+// CountOnlineSessions returns how many sessions are currently active.
+func (d *DB) CountOnlineSessions(ctx context.Context) (int64, error) {
+	var n int64
+	err := d.pool.QueryRow(ctx,
+		"SELECT COUNT(*) FROM sessions WHERE is_active = true",
+	).Scan(&n)
+	return n, err
+}
+
+// GetUsers returns all users with device/online info for the users page.
+func (d *DB) GetUsers(ctx context.Context) ([]models.UserRow, error) {
+	rows, err := d.pool.Query(ctx,
+		`SELECT u.id, u.username, u.is_active, u.created_at,
+		        d.last_seen, d.device_name,
+		        (SELECT COUNT(*) FROM sessions s2 WHERE s2.user_id=u.id AND s2.is_active=true) AS online
+		 FROM users u
+		 LEFT JOIN devices d ON d.user_id=u.id AND d.is_active=true
+		 ORDER BY u.created_at DESC`,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []models.UserRow
+	for rows.Next() {
+		var u models.UserRow
+		if err := rows.Scan(&u.ID, &u.Username, &u.IsActive, &u.CreatedAt,
+			&u.LastSeen, &u.DeviceName, &u.Online); err != nil {
+			return nil, err
+		}
+		out = append(out, u)
+	}
+	return out, rows.Err()
+}
+
+// CreateUser inserts a new user. Returns error on duplicate username.
+func (d *DB) CreateUser(ctx context.Context, username, passwordHash string, notes *string) error {
+	_, err := d.pool.Exec(ctx,
+		"INSERT INTO users (username, password_hash, notes) VALUES ($1, $2, $3)",
+		username, passwordHash, notes,
+	)
+	return err
+}
+
+// DeleteUser removes a user by UUID.
+func (d *DB) DeleteUser(ctx context.Context, userID uuid.UUID) error {
+	_, err := d.pool.Exec(ctx,
+		"DELETE FROM users WHERE id=$1",
+		userID,
+	)
+	return err
+}
+
+// UpdateUserPassword sets a new bcrypt hash for a user.
+func (d *DB) UpdateUserPassword(ctx context.Context, userID uuid.UUID, hash string) error {
+	_, err := d.pool.Exec(ctx,
+		"UPDATE users SET password_hash=$1 WHERE id=$2",
+		hash, userID,
+	)
+	return err
+}
+
+// GetUserActive returns the is_active flag for a user.
+func (d *DB) GetUserActive(ctx context.Context, userID uuid.UUID) (bool, error) {
+	var active bool
+	err := d.pool.QueryRow(ctx,
+		"SELECT is_active FROM users WHERE id=$1",
+		userID,
+	).Scan(&active)
+	return active, err
+}
+
+// SetUserActive enables or disables a user.
+func (d *DB) SetUserActive(ctx context.Context, userID uuid.UUID, active bool) error {
+	_, err := d.pool.Exec(ctx,
+		"UPDATE users SET is_active=$1 WHERE id=$2",
+		active, userID,
+	)
+	return err
+}
+
+// GetUsernameByID returns the username for a user ID.
+func (d *DB) GetUsernameByID(ctx context.Context, userID uuid.UUID) (string, error) {
+	var name string
+	err := d.pool.QueryRow(ctx,
+		"SELECT username FROM users WHERE id=$1",
+		userID,
+	).Scan(&name)
+	return name, err
+}
+
+// GetAllUsers returns a minimal list (id, username) for dropdown selects.
+func (d *DB) GetAllUsers(ctx context.Context) ([]models.UserIDRow, error) {
+	rows, err := d.pool.Query(ctx,
+		"SELECT id, username FROM users ORDER BY username",
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []models.UserIDRow
+	for rows.Next() {
+		var u models.UserIDRow
+		if err := rows.Scan(&u.ID, &u.Username); err != nil {
+			return nil, err
+		}
+		out = append(out, u)
+	}
+	return out, rows.Err()
+}
+
+// GetAccessLogs returns access_log rows for a user in a time range (max 1000).
+func (d *DB) GetAccessLogs(ctx context.Context, userID uuid.UUID, from, to string) ([]models.AccessLogRow, error) {
+	rows, err := d.pool.Query(ctx,
+		`SELECT al.host, al.access_hour, al.request_count, al.upload_bytes, al.download_bytes
+		 FROM access_log al
+		 WHERE al.user_id=$1
+		   AND al.access_hour >= $2::timestamp
+		   AND al.access_hour < ($3::date + interval '1 day')::timestamp
+		 ORDER BY al.access_hour DESC
+		 LIMIT 1000`,
+		userID, from, to,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []models.AccessLogRow
+	for rows.Next() {
+		var r models.AccessLogRow
+		if err := rows.Scan(&r.Host, &r.AccessHour, &r.RequestCount, &r.UploadBytes, &r.DownloadBytes); err != nil {
+			return nil, err
+		}
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
+// GetDailyTraffic returns traffic_daily rows for a user in a date range.
+func (d *DB) GetDailyTraffic(ctx context.Context, userID uuid.UUID, from, to string) ([]models.DailyTrafficRow, error) {
+	rows, err := d.pool.Query(ctx,
+		`SELECT date, upload_bytes, download_bytes
+		 FROM traffic_daily
+		 WHERE user_id=$1 AND date >= $2::date AND date <= $3::date
+		 ORDER BY date DESC`,
+		userID, from, to,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []models.DailyTrafficRow
+	for rows.Next() {
+		var r models.DailyTrafficRow
+		if err := rows.Scan(&r.Date, &r.UploadBytes, &r.DownloadBytes); err != nil {
+			return nil, err
+		}
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
+// GetTrafficSummary returns aggregate totals for a user in a date range.
+func (d *DB) GetTrafficSummary(ctx context.Context, userID uuid.UUID, from, to string) (models.TrafficSummary, error) {
+	var s models.TrafficSummary
+	err := d.pool.QueryRow(ctx,
+		`SELECT COALESCE(SUM(upload_bytes),0), COALESCE(SUM(download_bytes),0), COUNT(*)
+		 FROM traffic_daily
+		 WHERE user_id=$1 AND date >= $2::date AND date <= $3::date`,
+		userID, from, to,
+	).Scan(&s.Upload, &s.Download, &s.Sessions)
+	if err != nil {
+		return s, err
+	}
+	// Also count actual sessions
+	var sessions int64
+	err = d.pool.QueryRow(ctx,
+		`SELECT COUNT(*) FROM sessions
+		 WHERE user_id=$1 AND DATE(connected_at) >= $2::date AND DATE(connected_at) <= $3::date`,
+		userID, from, to,
+	).Scan(&sessions)
+	if err == nil {
+		s.Sessions = sessions
+	}
+	return s, nil
+}
+
+// UpsertAccessLog inserts or aggregates an access_log row.
+func (d *DB) UpsertAccessLog(ctx context.Context, userID, sessionID uuid.UUID, host string, accessHour time.Time, upload, download int64) error {
+	_, err := d.pool.Exec(ctx,
+		`INSERT INTO access_log (user_id, session_id, host, access_hour, upload_bytes, download_bytes)
+		 VALUES ($1, $2, $3, $4, $5, $6)
+		 ON CONFLICT (session_id, host, access_hour) DO UPDATE SET
+		   request_count  = access_log.request_count + 1,
+		   upload_bytes   = access_log.upload_bytes + EXCLUDED.upload_bytes,
+		   download_bytes = access_log.download_bytes + EXCLUDED.download_bytes`,
+		userID, sessionID, host, accessHour, upload, download,
+	)
+	return err
+}
+
+// UpdateSessionTraffic adds delta bytes to a session's running totals.
+func (d *DB) UpdateSessionTraffic(ctx context.Context, sessionID uuid.UUID, upload, download int64) error {
+	_, err := d.pool.Exec(ctx,
+		`UPDATE sessions SET upload_bytes = upload_bytes + $1, download_bytes = download_bytes + $2
+		 WHERE id = $3`,
+		upload, download, sessionID,
+	)
+	return err
+}
+
+// DeleteOldAccessLogs removes access_log rows older than the cutoff time.
+func (d *DB) DeleteOldAccessLogs(ctx context.Context, cutoff time.Time) (int64, error) {
+	tag, err := d.pool.Exec(ctx,
+		"DELETE FROM access_log WHERE access_hour < $1",
+		cutoff,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return tag.RowsAffected(), nil
+}
+
+// UpsertTrafficDaily aggregates yesterday's sessions into traffic_daily.
+func (d *DB) UpsertTrafficDaily(ctx context.Context, date time.Time) error {
+	_, err := d.pool.Exec(ctx,
+		`INSERT INTO traffic_daily (user_id, date, upload_bytes, download_bytes)
+		 SELECT user_id, $1::date,
+		        COALESCE(SUM(upload_bytes), 0),
+		        COALESCE(SUM(download_bytes), 0)
+		 FROM sessions
+		 WHERE DATE(connected_at) = $1
+		 GROUP BY user_id
+		 ON CONFLICT (user_id, date) DO UPDATE SET
+		   upload_bytes   = EXCLUDED.upload_bytes,
+		   download_bytes = EXCLUDED.download_bytes`,
+		date,
+	)
+	return err
+}
+
+// CapAccessLog removes excess access_log rows per user per day, keeping top maxDomains by traffic.
+func (d *DB) CapAccessLog(ctx context.Context, cutoff time.Time, maxDomains int) error {
+	_, err := d.pool.Exec(ctx,
+		`DELETE FROM access_log
+		 WHERE id IN (
+		   SELECT id FROM (
+		     SELECT id,
+		            ROW_NUMBER() OVER (
+		              PARTITION BY user_id, DATE(access_hour)
+		              ORDER BY download_bytes DESC, upload_bytes DESC
+		            ) AS rn
+		     FROM access_log
+		     WHERE access_hour >= $1
+		   ) ranked
+		   WHERE rn > $2
+		 )`,
+		cutoff, maxDomains,
+	)
+	return err
+}

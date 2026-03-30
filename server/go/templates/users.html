@@ -1,0 +1,196 @@
+{{define "title"}}用户管理 — 为爱鼓掌 VPN{{end}}
+
+<div class="mb-6 flex items-center justify-between">
+  <div>
+    <h1 class="text-2xl font-bold text-white">用户管理</h1>
+    <p class="text-gray-400 text-sm mt-1">共 {{len .Users}} 个用户</p>
+  </div>
+  <button onclick="document.getElementById('add-modal').classList.remove('hidden')"
+          class="bg-red-600 hover:bg-red-500 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors">
+    + 新建用户
+  </button>
+</div>
+
+<!-- Users table -->
+<div class="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
+  <table class="w-full text-sm">
+    <thead>
+      <tr class="text-gray-400 text-xs uppercase border-b border-gray-800">
+        <th class="px-4 py-3 text-left">用户名</th>
+        <th class="px-4 py-3 text-left">状态</th>
+        <th class="px-4 py-3 text-left">设备</th>
+        <th class="px-4 py-3 text-left">最后在线</th>
+        <th class="px-4 py-3 text-left">创建时间</th>
+        <th class="px-4 py-3 text-right">操作</th>
+      </tr>
+    </thead>
+    <tbody class="divide-y divide-gray-800">
+      {{range .Users}}
+      <tr class="hover:bg-gray-800/50" id="user-row-{{.ID}}">
+        <td class="px-4 py-3 font-medium text-white">{{.Username}}</td>
+        <td class="px-4 py-3">
+          {{if gt .Online 0}}
+            <span class="inline-flex items-center gap-1 text-xs bg-green-900/50 text-green-400 px-2 py-0.5 rounded-full">
+              <span class="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse"></span>在线
+            </span>
+          {{else if .IsActive}}
+            <span class="text-xs text-gray-400">离线</span>
+          {{else}}
+            <span class="text-xs text-red-400">已禁用</span>
+          {{end}}
+        </td>
+        <td class="px-4 py-3 text-gray-400 text-xs">{{if .DeviceName}}{{.DeviceName}}{{else}}未绑定{{end}}</td>
+        <td class="px-4 py-3 text-gray-400 text-xs">
+          {{if .LastSeen}}{{.LastSeen.Format "01-02 15:04"}}{{else}}—{{end}}
+        </td>
+        <td class="px-4 py-3 text-gray-500 text-xs">{{.CreatedAt.Format "2006-01-02"}}</td>
+        <td class="px-4 py-3 text-right">
+          <div class="flex items-center justify-end gap-2">
+            <!-- Generate verification code -->
+            <button
+              hx-get="/admin/users/{{.ID}}/verif-code"
+              hx-target="#code-modal-content"
+              hx-on::after-request="document.getElementById('code-modal').classList.remove('hidden')"
+              class="text-xs text-yellow-400 hover:text-yellow-300 px-2 py-1 rounded hover:bg-yellow-900/30 transition-colors"
+              title="生成验证码">
+              验证码
+            </button>
+            {{if gt .Online 0}}
+            <!-- Kick -->
+            <form action="/admin/users/{{.ID}}/kick" method="post" class="inline">
+              <button type="submit" class="text-xs text-orange-400 hover:text-orange-300 px-2 py-1 rounded hover:bg-orange-900/30 transition-colors" title="强制断开">
+                踢出
+              </button>
+            </form>
+            {{end}}
+            <!-- Change password -->
+            <button onclick="openPasswordModal('{{.ID}}', '{{.Username}}')"
+                    class="text-xs text-blue-400 hover:text-blue-300 px-2 py-1 rounded hover:bg-blue-900/30 transition-colors">
+              改密
+            </button>
+            <!-- Toggle active -->
+            <form action="/admin/users/{{.ID}}/toggle" method="post" class="inline">
+              <button type="submit"
+                      class="text-xs px-2 py-1 rounded transition-colors {{if not .IsActive}}text-green-400 hover:text-green-300 hover:bg-green-900/30{{else}}text-gray-400 hover:text-gray-300 hover:bg-gray-700{{end}}"
+                      title="{{if not .IsActive}}启用{{else}}禁用{{end}}">
+                {{if not .IsActive}}启用{{else}}禁用{{end}}
+              </button>
+            </form>
+            <!-- Delete -->
+            <form action="/admin/users/{{.ID}}/delete" method="post" class="inline"
+                  onsubmit="return confirm('确认删除用户 {{.Username}}？此操作不可撤销。')">
+              <button type="submit" class="text-xs text-red-500 hover:text-red-400 px-2 py-1 rounded hover:bg-red-900/30 transition-colors">
+                删除
+              </button>
+            </form>
+          </div>
+        </td>
+      </tr>
+      {{end}}
+      {{if not .Users}}
+      <tr>
+        <td colspan="6" class="px-4 py-10 text-center text-gray-500">暂无用户，点击右上角新建</td>
+      </tr>
+      {{end}}
+    </tbody>
+  </table>
+</div>
+
+<!-- Add user modal -->
+<div id="add-modal" class="hidden fixed inset-0 bg-black/60 flex items-center justify-center z-50">
+  <div class="bg-gray-900 border border-gray-700 rounded-2xl p-6 w-full max-w-sm shadow-xl">
+    <h3 class="text-lg font-bold text-white mb-4">新建用户</h3>
+    <form action="/admin/users" method="post" class="space-y-3">
+      <div>
+        <label class="block text-sm text-gray-400 mb-1">用户名</label>
+        <input type="text" name="username" required
+               class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white focus:outline-none focus:ring-2 focus:ring-red-500">
+      </div>
+      <div>
+        <label class="block text-sm text-gray-400 mb-1">密码（至少 8 位）</label>
+        <input type="password" name="password" required minlength="8"
+               class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white focus:outline-none focus:ring-2 focus:ring-red-500">
+      </div>
+      <div>
+        <label class="block text-sm text-gray-400 mb-1">备注（可选）</label>
+        <input type="text" name="notes"
+               class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white focus:outline-none focus:ring-2 focus:ring-red-500">
+      </div>
+      <div class="flex gap-3 pt-2">
+        <button type="button" onclick="document.getElementById('add-modal').classList.add('hidden')"
+                class="flex-1 bg-gray-700 hover:bg-gray-600 text-white py-2 rounded-lg text-sm transition-colors">
+          取消
+        </button>
+        <button type="submit"
+                class="flex-1 bg-red-600 hover:bg-red-500 text-white py-2 rounded-lg text-sm font-medium transition-colors">
+          创建
+        </button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Change password modal -->
+<div id="pw-modal" class="hidden fixed inset-0 bg-black/60 flex items-center justify-center z-50">
+  <div class="bg-gray-900 border border-gray-700 rounded-2xl p-6 w-full max-w-sm shadow-xl">
+    <h3 class="text-lg font-bold text-white mb-1">修改密码</h3>
+    <p class="text-sm text-gray-400 mb-4" id="pw-modal-username"></p>
+    <form id="pw-form" method="post" class="space-y-3">
+      <div>
+        <label class="block text-sm text-gray-400 mb-1">新密码（至少 8 位）</label>
+        <input type="password" name="password" required minlength="8"
+               class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white focus:outline-none focus:ring-2 focus:ring-red-500">
+      </div>
+      <div class="flex gap-3 pt-2">
+        <button type="button" onclick="document.getElementById('pw-modal').classList.add('hidden')"
+                class="flex-1 bg-gray-700 hover:bg-gray-600 text-white py-2 rounded-lg text-sm transition-colors">
+          取消
+        </button>
+        <button type="submit"
+                class="flex-1 bg-blue-600 hover:bg-blue-500 text-white py-2 rounded-lg text-sm font-medium transition-colors">
+          确认修改
+        </button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Verification code modal -->
+<div id="code-modal" class="hidden fixed inset-0 bg-black/60 flex items-center justify-center z-50">
+  <div class="bg-gray-900 border border-gray-700 rounded-2xl p-6 w-full max-w-sm shadow-xl">
+    <h3 class="text-lg font-bold text-white mb-4">设备验证码</h3>
+    <div id="code-modal-content" class="text-center">
+      <!-- Filled by HTMX -->
+    </div>
+    <button onclick="document.getElementById('code-modal').classList.add('hidden')"
+            class="w-full mt-4 bg-gray-700 hover:bg-gray-600 text-white py-2 rounded-lg text-sm transition-colors">
+      关闭
+    </button>
+  </div>
+</div>
+
+{{define "scripts"}}
+<script>
+function openPasswordModal(userId, username) {
+  document.getElementById('pw-modal-username').textContent = '用户：' + username;
+  document.getElementById('pw-form').action = '/admin/users/' + userId + '/password';
+  document.getElementById('pw-modal').classList.remove('hidden');
+}
+
+document.addEventListener('htmx:afterSwap', function(e) {
+  if (e.target.id === 'code-modal-content') {
+    try {
+      const data = JSON.parse(e.detail.xhr.responseText);
+      e.target.innerHTML = `
+        <p class="text-sm text-gray-400 mb-2">用户：<span class="text-white font-medium">${data.username}</span></p>
+        <div class="bg-gray-800 rounded-xl py-4 px-6 mb-3">
+          <p class="text-3xl font-mono font-bold tracking-widest text-yellow-400">${data.code}</p>
+        </div>
+        <p class="text-xs text-gray-500">有效期 15 分钟，使用后立即失效</p>
+        <p class="text-xs text-gray-500 mt-1">请将此验证码告知用户</p>
+      `;
+    } catch(err) {}
+  }
+});
+</script>
+{{end}}

@@ -1,0 +1,33 @@
+{{define "_online_rows"}}
+{{if .OnlineSessions}}
+<table class="w-full text-sm">
+  <thead>
+    <tr class="text-gray-400 text-xs uppercase border-b border-gray-800">
+      <th class="px-4 py-2 text-left">用户</th>
+      <th class="px-4 py-2 text-left">IP / 位置</th>
+      <th class="px-4 py-2 text-left">连接时间</th>
+      <th class="px-4 py-2 text-right">上传</th>
+      <th class="px-4 py-2 text-right">下载</th>
+    </tr>
+  </thead>
+  <tbody class="divide-y divide-gray-800">
+    {{range .OnlineSessions}}
+    <tr class="hover:bg-gray-800/50">
+      <td class="px-4 py-3 font-medium text-white">{{.Username}}</td>
+      <td class="px-4 py-3 text-gray-300">
+        {{.LoginIP}}
+        {{if and .LoginCountry (ne .LoginCountry "Unknown")}}
+        <span class="text-gray-500 text-xs ml-1">{{.LoginCountry}}{{if and .LoginCity (ne .LoginCity "Unknown")}}, {{.LoginCity}}{{end}}</span>
+        {{end}}
+      </td>
+      <td class="px-4 py-3 text-gray-400 text-xs">{{.ConnectedAt.Format "01-02 15:04"}}</td>
+      <td class="px-4 py-3 text-right text-blue-400 text-xs">{{toMB .UploadBytes}} MB</td>
+      <td class="px-4 py-3 text-right text-purple-400 text-xs">{{toMB .DownloadBytes}} MB</td>
+    </tr>
+    {{end}}
+  </tbody>
+</table>
+{{else}}
+<div class="px-4 py-10 text-center text-gray-500">暂无在线用户</div>
+{{end}}
+{{end}}
