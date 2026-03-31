@@ -19,6 +19,7 @@ type RedisConfig struct {
 type ServerConfig struct {
 	IP         string `yaml:"ip"`
 	Port       int    `yaml:"port"`
+	AuthPort   int    `yaml:"auth_port"`
 	PublicKey  string `yaml:"public_key"`
 	PrivateKey string `yaml:"private_key"`
 	ShortID    string `yaml:"short_id"`
@@ -103,6 +104,9 @@ func Load() (*Config, error) {
 	}
 	if cfg.Log.MaxDomainsPerUserPerDay == 0 {
 		cfg.Log.MaxDomainsPerUserPerDay = 500
+	}
+	if cfg.Server.AuthPort == 0 {
+		cfg.Server.AuthPort = 443
 	}
 	if cfg.Client.MinVersion == "" {
 		cfg.Client.MinVersion = "1.0.0"

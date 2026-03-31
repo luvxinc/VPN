@@ -161,8 +161,9 @@ func main() {
 		app.ShutdownWithTimeout(10_000_000_000) // 10s in nanoseconds
 	}()
 
-	slog.Info("starting weiai vpn server", "version", VERSION, "addr", ":9443")
-	if err := app.ListenTLS(":9443", certPath, keyPath); err != nil {
+	addr := fmt.Sprintf(":%d", cfg.Server.AuthPort)
+	slog.Info("starting weiai vpn server", "version", VERSION, "addr", addr)
+	if err := app.ListenTLS(addr, certPath, keyPath); err != nil {
 		slog.Error("server error", "err", err)
 		os.Exit(1)
 	}

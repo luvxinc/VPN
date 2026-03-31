@@ -7,7 +7,8 @@ redis:
 
 server:
   ip: "YOUR_SERVER_IP"
-  port: 443
+  port: 8443          # sing-box VLESS+Reality listen port (router: WAN:8443 → server:8443)
+  auth_port: 443      # auth HTTP server listen port (router: WAN:443 → server:443)
   public_key: "YOUR_REALITY_PUBLIC_KEY"
   private_key: "YOUR_REALITY_PRIVATE_KEY"
   short_id: "YOUR_SHORT_ID"
@@ -53,7 +54,7 @@ log:
 client:
   # Reject clients older than this version (returns HTTP 426 Upgrade Required)
   min_version: "1.0.0"
-  # URL shown to users when client is outdated
-  download_url: "https://YOUR_SERVER_IP:9443/download/client"
+  # URL shown to users when client is outdated (no explicit port if auth_port=443)
+  download_url: "https://YOUR_SERVER_IP/download/client"
   # Path to the distributable .zip (relative to server/ or absolute)
   client_zip_path: "../client/dist/为爱鼓掌.zip"
