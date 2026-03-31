@@ -42,13 +42,15 @@ final class UpdateService: NSObject, ObservableObject {
         let zipDest = URL(fileURLWithPath: "/tmp/weiai-update.zip")
         let updateDir = URL(fileURLWithPath: "/tmp/weiai-update")
 
-        // Move downloaded file to a stable path
-        try? FileManager.default.removeItem(at: zipDest)
-        do {
-            try FileManager.default.moveItem(at: tmp, to: zipDest)
-        } catch {
-            state = .failed(L("update.error.invalidPackage"))
-            return
+        // Move to final zip path (src is already stable; rename is near-instant).
+        if tmp.path != zipDest.path {
+            try? FileManager.default.removeItem(at: zipDest)
+            do {
+                try FileManager.default.moveItem(at: tmp, to: zipDest)
+            } catch {
+                state = .failed(L("update.error.invalidPackage"))
+                return
+            }
         }
 
         // Clean previous extraction
@@ -120,7 +122,17 @@ extension UpdateService: URLSessionDownloadDelegate {
     nonisolated func urlSession(_ session: URLSession,
                                 downloadTask: URLSessionDownloadTask,
                                 didFinishDownloadingTo location: URL) {
-        Task { @MainActor in self.install(from: location) }
+        // URLSession deletes `location` as soon as this method returns.
+        // Copy to a stable path SYNCHRONOUSLY here, before returning.
+        let stable = URL(fileURLWithPath: "/tmp/weiai-update-dl.zip")
+        try? FileManager.default.removeItem(at: stable)
+        do {
+            try FileManager.default.copyItem(at: location, to: stable)
+        } catch {
+            Task { @MainActor in self.state = .failed(L("update.error.invalidPackage")) }
+            return
+        }
+        Task { @MainActor in self.install(from: stable) }
     }
 
     nonisolated func urlSession(_ session: URLSession,
