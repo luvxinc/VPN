@@ -393,16 +393,15 @@ class VPNManager: ObservableObject {
                     "path": wsPath,
                 ]
             ]
-            let urltestOutbound: [String: Any] = [
-                "type":      "urltest",
+            let fallbackOutbound: [String: Any] = [
+                "type":      "fallback",
                 "tag":       "proxy",
                 "outbounds": ["reality-direct", "ws-cdn"],
                 "url":       "https://www.gstatic.com/generate_204",
                 "interval":  "3m",
-                "tolerance": 50,
             ]
             outbounds.append(wsOutbound)
-            outbounds.append(urltestOutbound)
+            outbounds.append(fallbackOutbound)
             finalOutbound = "proxy"
         }
 
