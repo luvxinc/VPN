@@ -343,36 +343,49 @@ class VPNManager: ObservableObject {
         }
         guard apiUp else { return false }
 
-        // ── Phase 2: tunnel connectivity via delay test ─────────────────────────
-        // Try ws-cdn FIRST (Cloudflare responds in ~1-3s and is highly reliable),
-        // then fall back to reality-direct, then the urltest proxy group.
-        // This avoids waiting for reality-direct's long TCP timeout (5-10s) before
-        // discovering that the Cloudflare path works.
+        // ── Phase 2: tunnel connectivity via delay test (with retry loop) ──────
+        // IMPORTANT: The server's sing-box is killed and restarted by UpdateUUID on
+        // every login. The restart takes ~3-5 s. We must retry until the server is
+        // back up — a single pass would hit the race window and declare failure.
+        //
+        // Strategy:
+        //   • Try ws-cdn first (Cloudflare CDN, ~1-3 s round-trip, most reliable)
+        //   • Then reality-direct (direct VLESS, fast when working)
+        //   • Then proxy (urltest group, if configured)
+        //   • Cap each individual delay test at 5 s so we don't stall on one tag
+        //   • Loop the whole cycle with 1-second pauses until the global deadline
         let testURL = "https://cp.cloudflare.com/generate_204"
             .addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
-        for tag in ["ws-cdn", "reality-direct", "proxy"] {
-            let remaining = deadline.timeIntervalSinceNow
-            guard remaining > 0.5 else { return false }
-            let ms = max(1000, Int(remaining * 1000) - 500)
-            let encodedTag = tag.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? tag
-            guard let url = URL(string:
-                "http://127.0.0.1:\(clashPort)/proxies/\(encodedTag)/delay?url=\(testURL)&timeout=\(ms)"
-            ) else { continue }
+        let perTagMs = 5_000 // max ms for each individual delay test
+        while deadline.timeIntervalSinceNow > 0.5 {
+            for tag in ["ws-cdn", "reality-direct", "proxy"] {
+                let remaining = deadline.timeIntervalSinceNow
+                guard remaining > 0.5 else { return false }
+                let ms = min(perTagMs, max(1000, Int(remaining * 1000) - 200))
+                let encodedTag = tag.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? tag
+                guard let url = URL(string:
+                    "http://127.0.0.1:\(clashPort)/proxies/\(encodedTag)/delay?url=\(testURL)&timeout=\(ms)"
+                ) else { continue }
 
-            let sem = DispatchSemaphore(value: 0)
-            var connected = false
-            URLSession(configuration: .ephemeral)
-                .dataTask(with: URLRequest(url: url, timeoutInterval: remaining)) { data, resp, _ in
-                    if let http = resp as? HTTPURLResponse, http.statusCode == 200,
-                       let data = data,
-                       let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                       json["delay"] != nil {
-                        connected = true
-                    }
-                    sem.signal()
-                }.resume()
-            sem.wait()
-            if connected { return true }
+                let sem = DispatchSemaphore(value: 0)
+                var connected = false
+                URLSession(configuration: .ephemeral)
+                    .dataTask(with: URLRequest(url: url, timeoutInterval: Double(ms) / 1000 + 1)) { data, resp, _ in
+                        if let http = resp as? HTTPURLResponse, http.statusCode == 200,
+                           let data = data,
+                           let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                           json["delay"] != nil {
+                            connected = true
+                        }
+                        sem.signal()
+                    }.resume()
+                sem.wait()
+                if connected { return true }
+            }
+            // Brief pause before the next retry cycle so we don't hammer too hard
+            if deadline.timeIntervalSinceNow > 1.5 {
+                Thread.sleep(forTimeInterval: 1.0)
+            }
         }
         return false
     }
