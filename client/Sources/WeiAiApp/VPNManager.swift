@@ -390,6 +390,14 @@ class VPNManager: ObservableObject {
 
         let config: [String: Any] = [
             "log": ["level": "warn"],
+            "dns": [
+                "servers": [
+                    ["tag": "remote", "address": "8.8.8.8",   "detour": "proxy"],
+                    ["tag": "local",  "address": "223.5.5.5", "detour": "direct"],
+                ],
+                "rules": [["outbound": "any", "server": "local"]],
+                "final": "remote",
+            ],
             "inbounds": [[
                 "type":         "tun",
                 "tag":          "tun-in",

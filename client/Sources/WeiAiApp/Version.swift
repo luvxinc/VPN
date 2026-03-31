@@ -5,8 +5,8 @@
 ///   MINOR — new feature, backward-compatible
 ///   PATCH — bug fix, no API change
 enum AppVersion {
-    static let current     = "1.0.9"
-    static let releaseDate = "2026-03-30"
+    static let current     = "1.1.0"
+    static let releaseDate = "2026-03-31"
     static let author      = "Aaron Tong"
 
     /// Sent to the server in X-Client-Version header.
