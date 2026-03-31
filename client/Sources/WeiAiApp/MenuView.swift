@@ -2,6 +2,7 @@ import SwiftUI
 
 struct ConnectView: View {
     @ObservedObject var vpn: VPNManager
+    @ObservedObject private var updater = UpdateService.shared
     let onConnected: () -> Void
 
     @State private var username: String = AuthService.shared.savedUsername ?? ""
@@ -21,7 +22,7 @@ struct ConnectView: View {
                 .foregroundStyle(.red)
                 .padding(.bottom, 12)
 
-            Text("为爱鼓掌 VPN")
+            Text(L("app.name"))
                 .font(.title2.bold())
                 .padding(.bottom, 24)
 
@@ -55,15 +56,15 @@ struct ConnectView: View {
 
     private var loginView: some View {
         VStack(spacing: 10) {
-            TextField("用户名", text: $username)
+            TextField(L("login.username"), text: $username)
                 .textFieldStyle(.roundedBorder)
                 .autocorrectionDisabled()
 
-            SecureField("密码", text: $password)
+            SecureField(L("login.password"), text: $password)
                 .textFieldStyle(.roundedBorder)
 
             Button(action: attemptConnect) {
-                Text("连接")
+                Text(L("login.connect"))
                     .frame(maxWidth: .infinity)
             }
             .buttonStyle(.borderedProminent)
@@ -81,7 +82,7 @@ struct ConnectView: View {
     private var connectingView: some View {
         HStack(spacing: 8) {
             ProgressView().scaleEffect(0.8)
-            Text("连接中...").foregroundStyle(.secondary)
+            Text(L("login.connecting")).foregroundStyle(.secondary)
         }
         .frame(height: 36)
     }
@@ -89,50 +90,82 @@ struct ConnectView: View {
     // MARK: - Update required
 
     private func updateRequiredView(downloadURL: String) -> some View {
-        VStack(spacing: 12) {
-            Image(systemName: "arrow.down.circle.fill")
-                .font(.system(size: 36))
-                .foregroundStyle(.orange)
+        VStack(spacing: 14) {
+            switch updater.state {
+            case .idle:
+                Image(systemName: "arrow.down.circle.fill")
+                    .font(.system(size: 36))
+                    .foregroundStyle(.orange)
 
-            Text("需要更新客户端")
-                .font(.headline)
+                Text(L("update.title"))
+                    .font(.headline)
 
-            Text("当前版本过旧，请下载最新版本后重新安装。")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
+                Text(L("update.message"))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
 
-            Button(action: { openDownload(url: downloadURL) }) {
-                Label("下载最新版本", systemImage: "arrow.down.circle")
-                    .frame(maxWidth: .infinity)
+                Button(action: { updater.start(downloadURL: downloadURL) }) {
+                    Label(L("update.action"), systemImage: "arrow.down.circle")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.large)
+                .tint(.orange)
+
+            case .downloading(let p):
+                Image(systemName: "arrow.down.circle")
+                    .font(.system(size: 28))
+                    .foregroundStyle(.orange)
+
+                ProgressView(value: p)
+                    .progressViewStyle(.linear)
+                    .frame(width: 200)
+
+                Text(String(format: L("update.progress"), Int(p * 100)))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
+            case .installing:
+                ProgressView()
+                Text(L("update.installing"))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
+            case .failed(let msg):
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .font(.system(size: 28))
+                    .foregroundStyle(.red)
+
+                Text(msg)
+                    .font(.caption)
+                    .foregroundStyle(.red)
+                    .multilineTextAlignment(.center)
+
+                Button(action: { updater.start(downloadURL: downloadURL) }) {
+                    Text(L("update.retry")).frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.regular)
+                .tint(.orange)
             }
-            .buttonStyle(.borderedProminent)
-            .controlSize(.large)
-            .tint(.orange)
-
-            Button("返回") {
-                updateURL = nil
-                errorMsg = nil
-            }
-            .buttonStyle(.borderless)
-            .foregroundStyle(.secondary)
-            .font(.caption)
         }
+        .animation(.easeInOut(duration: 0.2), value: updater.state)
     }
 
     // MARK: - Device verification code form
 
     private var deviceCodeView: some View {
         VStack(spacing: 10) {
-            Text("此设备未注册")
+            Text(L("deviceCode.title"))
                 .font(.headline)
 
-            Text("请联系管理员获取 8 位验证码")
+            Text(L("deviceCode.message"))
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
 
-            TextField("验证码（8位）", text: $verificationCode)
+            TextField(L("deviceCode.placeholder"), text: $verificationCode)
                 .textFieldStyle(.roundedBorder)
                 .autocorrectionDisabled()
                 .textCase(.uppercase)
@@ -141,7 +174,7 @@ struct ConnectView: View {
                 }
 
             Button(action: attemptVerify) {
-                Text("验证并连接")
+                Text(L("deviceCode.verify"))
                     .frame(maxWidth: .infinity)
             }
             .buttonStyle(.borderedProminent)
@@ -149,7 +182,7 @@ struct ConnectView: View {
             .tint(.red)
             .disabled(verificationCode.count != 8)
 
-            Button("返回") {
+            Button(L("deviceCode.back")) {
                 showDeviceCodeForm = false
                 verificationCode = ""
                 errorMsg = nil
@@ -206,7 +239,7 @@ struct ConnectView: View {
             case .success:
                 onConnected()
             case .deviceNotRegistered:
-                errorMsg = "验证码无效或已过期"
+                errorMsg = L("deviceCode.invalid")
             case .updateRequired(let url):
                 updateURL = url
                 showDeviceCodeForm = false
@@ -214,10 +247,5 @@ struct ConnectView: View {
                 errorMsg = msg
             }
         }
-    }
-
-    private func openDownload(url: String) {
-        guard let nsURL = URL(string: url) else { return }
-        NSWorkspace.shared.open(nsURL)
     }
 }

@@ -1,0 +1,62 @@
+/* App */
+"app.name" = "WeiAi VPN";
+
+/* Login */
+"login.username" = "Username";
+"login.password" = "Password";
+"login.connect" = "Connect";
+"login.connecting" = "Connecting...";
+
+/* Menu bar */
+"menu.disconnect" = "Disconnect";
+"menu.quit" = "Quit";
+
+/* Device code */
+"deviceCode.title" = "Device Not Registered";
+"deviceCode.message" = "Contact your admin for an 8-character registration code.";
+"deviceCode.placeholder" = "Code (8 chars)";
+"deviceCode.verify" = "Verify & Connect";
+"deviceCode.back" = "Back";
+"deviceCode.invalid" = "Code invalid or expired";
+
+/* Update */
+"update.title" = "Update Required";
+"update.message" = "This version is no longer supported. Please update to continue.";
+"update.action" = "Update Now";
+"update.progress" = "Downloading... %d%%";
+"update.installing" = "Installing...";
+"update.restarting" = "Restarting...";
+"update.retry" = "Retry";
+"update.error.invalidPackage" = "Update package is invalid";
+
+/* Errors */
+"error.unexpectedResponse" = "No response from server";
+"error.invalidResponse" = "Invalid response from server";
+"error.deviceNotRegistered" = "Device not registered. Contact your admin for a code.";
+"error.serverOffline" = "Server is offline, please try again later";
+"error.updateRequired" = "Client version outdated, please update";
+"error.invalidCredentials" = "Incorrect username or password";
+"error.rateLimited" = "Too many attempts, please wait";
+"error.accountDisabled" = "This account is disabled";
+"error.networkGeneric" = "Network error, please retry";
+"error.noInternet" = "No internet connection. Check Wi-Fi or network.";
+"error.timeout" = "Connection timed out, check your network";
+"error.connectionLost" = "Network connection lost, please retry";
+"error.tlsFailed" = "Secure connection failed, contact admin";
+"error.launchScriptFailed" = "Failed to write launch script";
+"error.osascriptFailed" = "Cannot run system script";
+"error.authCancelled" = "Authorization cancelled, VPN not started";
+
+/* Kill switch */
+"ks.startup.title" = "VPN Was Disconnected";
+"ks.startup.message" = "A previous VPN session ended unexpectedly. Network is currently blocked to prevent data leaks.";
+"ks.activated.title" = "VPN Disconnected";
+"ks.activated.message" = "All network traffic has been blocked to prevent data leaks.";
+"ks.activated.notification.title" = "VPN Disconnected";
+"ks.activated.notification.body" = "Network blocked. Tap to reconnect.";
+"ks.reconnect" = "Reconnect";
+"ks.restoreAndQuit" = "Restore Network & Quit";
+"ks.quit.title" = "Kill Switch Is Active";
+"ks.quit.message" = "Network will be restored automatically when you quit. Confirm?";
+"ks.quit.confirm" = "Quit & Restore Network";
+"ks.quit.cancel" = "Cancel";

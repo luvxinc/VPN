@@ -18,5 +18,11 @@ jobs:
           export PATH=/opt/homebrew/bin:$PATH
           go build -ldflags="-s -w" -o ../authserver .
 
+      - name: Build client
+        working-directory: /Users/aaronsever/Developer/VPN/client
+        run: |
+          export PATH=/opt/homebrew/bin:$PATH
+          bash build.sh
+
       - name: Reload service
         run: launchctl kickstart -k gui/$(id -u)/com.weiai.authserver

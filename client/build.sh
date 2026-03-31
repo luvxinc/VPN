@@ -45,6 +45,13 @@ fi
 chmod +x "${APP_DIR}/Contents/MacOS/${EXEC_NAME}"
 chmod +x "${APP_DIR}/Contents/Resources/sing-box"
 
+# 4b. 复制本地化文件
+for lproj in en.lproj zh-Hans.lproj; do
+    if [ -d "Resources/$lproj" ]; then
+        cp -R "Resources/$lproj" "${APP_DIR}/Contents/Resources/$lproj"
+    fi
+done
+
 # 5. 写 Info.plist（EXEC_NAME 必须与 Contents/MacOS/ 下文件名一致）
 cat > "${APP_DIR}/Contents/Info.plist" << EOF
 <?xml version="1.0" encoding="UTF-8"?>
@@ -63,6 +70,7 @@ cat > "${APP_DIR}/Contents/Info.plist" << EOF
     <key>LSMinimumSystemVersion</key>    <string>13.0</string>
     <key>CFBundleIconFile</key>          <string>AppIcon</string>
     <key>NSPrincipalClass</key>          <string>NSApplication</string>
+    <key>CFBundleDevelopmentRegion</key> <string>en</string>
     <!-- 允许连接自签名 HTTPS（真正的安全由 certificate pinning 保证） -->
     <key>NSAppTransportSecurity</key>
     <dict>

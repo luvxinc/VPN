@@ -24,42 +24,31 @@ enum AuthError: LocalizedError {
 
     var errorDescription: String {
         switch self {
-        case .unexpectedResponse:
-            return "服务器无响应"
-        case .invalidResponse:
-            return "服务器返回格式错误"
-        case .deviceNotRegistered:
-            return "此设备未注册，请联系管理员获取验证码"
-        case .serverOffline:
-            return "服务器暂时离线，请稍后再试"
-        case .networkError(let e):
-            return _friendlyNetworkError(e)
-        case .updateRequired:
-            return "客户端版本过旧，需要更新后才能使用"
+        case .unexpectedResponse:       return L("error.unexpectedResponse")
+        case .invalidResponse:          return L("error.invalidResponse")
+        case .deviceNotRegistered:      return L("error.deviceNotRegistered")
+        case .serverOffline:            return L("error.serverOffline")
+        case .networkError(let e):      return _friendlyNetworkError(e)
+        case .updateRequired:           return L("error.updateRequired")
         case .serverError(let code, let msg):
-            if code == 401 { return "用户名或密码错误" }
-            if code == 429 { return "请求太频繁，请稍后再试" }
-            if code == 403 { return "账号已被禁用" }
-            return "服务器错误 (\(code)): \(msg)"
+            if code == 401 { return L("error.invalidCredentials") }
+            if code == 429 { return L("error.rateLimited") }
+            if code == 403 { return L("error.accountDisabled") }
+            return "(\(code)) \(msg)"
         }
     }
 }
 
 private func _friendlyNetworkError(_ error: Error) -> String {
-    let code = (error as NSError).code
-    switch code {
-    case NSURLErrorNotConnectedToInternet:
-        return "无网络连接，请检查 Wi-Fi 或移动数据"
-    case NSURLErrorCannotConnectToHost, NSURLErrorCannotFindHost:
-        return "服务器暂时离线，请稍后再试"
-    case NSURLErrorTimedOut:
-        return "连接超时，请检查网络后重试"
-    case NSURLErrorNetworkConnectionLost:
-        return "网络连接中断，请重试"
-    case NSURLErrorSecureConnectionFailed, NSURLErrorServerCertificateUntrusted:
-        return "安全连接失败，请联系管理员"
-    default:
-        return "网络错误，请重试"
+    switch (error as NSError).code {
+    case NSURLErrorNotConnectedToInternet:              return L("error.noInternet")
+    case NSURLErrorCannotConnectToHost,
+         NSURLErrorCannotFindHost:                      return L("error.serverOffline")
+    case NSURLErrorTimedOut:                            return L("error.timeout")
+    case NSURLErrorNetworkConnectionLost:               return L("error.connectionLost")
+    case NSURLErrorSecureConnectionFailed,
+         NSURLErrorServerCertificateUntrusted:          return L("error.tlsFailed")
+    default:                                            return L("error.networkGeneric")
     }
 }
 
@@ -206,7 +195,7 @@ final class AuthService: NSObject {
                 return
             }
 
-            // 426 Upgrade Required — client version too old
+            // 426 Upgrade Required
             if http.statusCode == 426,
                let data = data,
                let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
@@ -217,7 +206,7 @@ final class AuthService: NSObject {
                 return
             }
 
-            // 403 device_not_registered is a distinct state, not a generic error
+            // 403 device_not_registered
             if http.statusCode == 403,
                let data = data,
                let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
@@ -228,7 +217,7 @@ final class AuthService: NSObject {
             }
 
             guard http.statusCode == 200, let data = data else {
-                let msg = String(data: data ?? Data(), encoding: .utf8) ?? "Unknown error"
+                let msg = String(data: data ?? Data(), encoding: .utf8) ?? ""
                 completion(.failure(.serverError(http.statusCode, msg)))
                 return
             }
@@ -237,11 +226,11 @@ final class AuthService: NSObject {
                   let at    = json["access_token"]  as? String,
                   let rt    = json["refresh_token"] as? String,
                   let vc    = json["vless_config"]  as? [String: Any],
-                  let uuid  = vc["uuid"]       as? String,
-                  let srv   = vc["server"]     as? String,
-                  let port  = vc["port"]       as? Int,
-                  let pub   = vc["public_key"] as? String,
-                  let sid   = vc["short_id"]   as? String,
+                  let uuid  = vc["uuid"]        as? String,
+                  let srv   = vc["server"]      as? String,
+                  let port  = vc["port"]        as? Int,
+                  let pub   = vc["public_key"]  as? String,
+                  let sid   = vc["short_id"]    as? String,
                   let sni   = vc["server_name"] as? String
             else {
                 completion(.failure(.invalidResponse))
@@ -251,9 +240,8 @@ final class AuthService: NSObject {
             KeychainHelper.save(at, for: .accessToken)
             KeychainHelper.save(rt, for: .refreshToken)
 
-            let vpnConfig = VPNConfig(uuid: uuid, server: srv, port: port,
-                                      publicKey: pub, shortId: sid, serverName: sni)
-            completion(.success(vpnConfig))
+            completion(.success(VPNConfig(uuid: uuid, server: srv, port: port,
+                                          publicKey: pub, shortId: sid, serverName: sni)))
         }.resume()
     }
 }

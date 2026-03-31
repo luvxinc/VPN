@@ -1,0 +1,62 @@
+/* App */
+"app.name" = "为爱鼓掌 VPN";
+
+/* Login */
+"login.username" = "用户名";
+"login.password" = "密码";
+"login.connect" = "连接";
+"login.connecting" = "连接中...";
+
+/* Menu bar */
+"menu.disconnect" = "断开连接";
+"menu.quit" = "退出";
+
+/* Device code */
+"deviceCode.title" = "此设备未注册";
+"deviceCode.message" = "请联系管理员获取 8 位注册验证码。";
+"deviceCode.placeholder" = "验证码（8位）";
+"deviceCode.verify" = "验证并连接";
+"deviceCode.back" = "返回";
+"deviceCode.invalid" = "验证码无效或已过期";
+
+/* Update */
+"update.title" = "需要更新客户端";
+"update.message" = "当前版本已不受支持，请更新后继续使用。";
+"update.action" = "立即更新";
+"update.progress" = "正在下载... %d%%";
+"update.installing" = "正在安装...";
+"update.restarting" = "正在重启...";
+"update.retry" = "重试";
+"update.error.invalidPackage" = "更新包损坏，请重试";
+
+/* Errors */
+"error.unexpectedResponse" = "服务器无响应";
+"error.invalidResponse" = "服务器返回格式错误";
+"error.deviceNotRegistered" = "此设备未注册，请联系管理员获取验证码";
+"error.serverOffline" = "服务器暂时离线，请稍后再试";
+"error.updateRequired" = "客户端版本过旧，需要更新后才能使用";
+"error.invalidCredentials" = "用户名或密码错误";
+"error.rateLimited" = "请求太频繁，请稍后再试";
+"error.accountDisabled" = "账号已被禁用";
+"error.networkGeneric" = "网络错误，请重试";
+"error.noInternet" = "无网络连接，请检查 Wi-Fi 或移动数据";
+"error.timeout" = "连接超时，请检查网络后重试";
+"error.connectionLost" = "网络连接中断，请重试";
+"error.tlsFailed" = "安全连接失败，请联系管理员";
+"error.launchScriptFailed" = "写入启动脚本失败";
+"error.osascriptFailed" = "无法运行 osascript";
+"error.authCancelled" = "已取消授权，VPN 未启动";
+
+/* Kill switch */
+"ks.startup.title" = "上次 VPN 异常断开";
+"ks.startup.message" = "检测到上次 VPN 异常退出，网络当前处于封锁状态，防止数据泄漏。";
+"ks.activated.title" = "VPN 已意外断开";
+"ks.activated.message" = "为防止数据泄漏，已自动封锁所有网络连接。";
+"ks.activated.notification.title" = "VPN 已断开";
+"ks.activated.notification.body" = "网络已封锁，防止数据泄漏。点击重新连接。";
+"ks.reconnect" = "重新连接";
+"ks.restoreAndQuit" = "恢复网络并退出";
+"ks.quit.title" = "VPN 处于封锁状态";
+"ks.quit.message" = "退出后将自动恢复正常网络连接。确认退出？";
+"ks.quit.confirm" = "退出并恢复网络";
+"ks.quit.cancel" = "取消";

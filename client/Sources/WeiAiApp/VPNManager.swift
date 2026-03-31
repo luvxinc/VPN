@@ -50,11 +50,8 @@ class VPNManager: ObservableObject {
                     completion(.error(err.errorDescription))
                 case .success(let config):
                     self?.startSingBox(config: config) { errMsg in
-                        if let msg = errMsg {
-                            completion(.error(msg))
-                        } else {
-                            completion(.success)
-                        }
+                        if let msg = errMsg { completion(.error(msg)) }
+                        else { completion(.success) }
                     }
                 }
             }
@@ -78,11 +75,8 @@ class VPNManager: ObservableObject {
                     completion(.error(err.errorDescription))
                 case .success(let config):
                     self?.startSingBox(config: config) { errMsg in
-                        if let msg = errMsg {
-                            completion(.error(msg))
-                        } else {
-                            completion(.success)
-                        }
+                        if let msg = errMsg { completion(.error(msg)) }
+                        else { completion(.success) }
                     }
                 }
             }
@@ -97,10 +91,9 @@ class VPNManager: ObservableObject {
         monitorTimer = nil
         isConnected  = false
         isConnecting = false
-        let pidPath    = self.pidPath
-        let serverIP   = self.currentServerIP ?? ""
+        let pidPath   = self.pidPath
+        let serverIP  = self.currentServerIP ?? ""
         currentServerIP = nil
-        // User-initiated: deactivate kill switch, then stop sing-box
         KillSwitch.shared.deactivate()
         DispatchQueue.global(qos: .userInitiated).async {
             VPNManager.stopSingBoxStatic(pidPath: pidPath, serverIP: serverIP)
@@ -125,9 +118,7 @@ class VPNManager: ObservableObject {
             let launchScript = "/tmp/weiai_launch.sh"
             let scriptContent = """
             #!/bin/sh
-            # Static route for VPN server to avoid TUN routing loop
             /sbin/route add -host \(serverIP) \(gateway) 2>/dev/null || true
-            # Start sing-box
             "\(sbPath)" run -c "\(cfgPath)" > /tmp/weiai_sb.log 2>&1 &
             echo $! > "\(pidPath)"
             """
@@ -138,15 +129,15 @@ class VPNManager: ObservableObject {
             } catch {
                 Task { @MainActor in
                     self.isConnecting = false
-                    completion("写入启动脚本失败: \(error.localizedDescription)")
+                    completion("\(L("error.launchScriptFailed")): \(error.localizedDescription)")
                 }
                 return
             }
 
             let appleScript = "do shell script \"\(launchScript)\" with administrator privileges"
             let task = Process()
-            task.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
-            task.arguments     = ["-e", appleScript]
+            task.executableURL  = URL(fileURLWithPath: "/usr/bin/osascript")
+            task.arguments      = ["-e", appleScript]
             task.standardOutput = Pipe()
             task.standardError  = Pipe()
 
@@ -154,7 +145,7 @@ class VPNManager: ObservableObject {
             catch {
                 Task { @MainActor in
                     self.isConnecting = false
-                    completion("无法运行 osascript: \(error.localizedDescription)")
+                    completion("\(L("error.osascriptFailed")): \(error.localizedDescription)")
                 }
                 return
             }
@@ -162,7 +153,7 @@ class VPNManager: ObservableObject {
             guard task.terminationStatus == 0 else {
                 Task { @MainActor in
                     self.isConnecting = false
-                    completion("已取消授权，VPN 未启动")
+                    completion(L("error.authCancelled"))
                 }
                 return
             }
@@ -178,7 +169,7 @@ class VPNManager: ObservableObject {
         }
     }
 
-    // MARK: - Stop sing-box (static, nonisolated)
+    // MARK: - Stop sing-box
 
     nonisolated private static func stopSingBoxStatic(pidPath: String, serverIP: String) {
         let stopScript = "/tmp/weiai_stop.sh"
@@ -195,8 +186,8 @@ class VPNManager: ObservableObject {
 
         let appleScript = "do shell script \"\(stopScript)\" with administrator privileges"
         let task = Process()
-        task.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
-        task.arguments     = ["-e", appleScript]
+        task.executableURL  = URL(fileURLWithPath: "/usr/bin/osascript")
+        task.arguments      = ["-e", appleScript]
         task.standardOutput = Pipe()
         task.standardError  = Pipe()
         try? task.run()
@@ -215,7 +206,6 @@ class VPNManager: ObservableObject {
                     self.isConnecting = false
                     self.monitorTimer?.invalidate()
                     self.monitorTimer = nil
-                    // Unexpected disconnect — activate kill switch and notify AppDelegate
                     KillSwitch.shared.activate(serverIP: serverIP)
                     NotificationCenter.default.post(
                         name: .vpnKillSwitchActivated,

@@ -57,7 +57,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             backing:     .buffered,
             defer:       false
         )
-        win.title                = "为爱鼓掌 VPN"
+        win.title                = L("app.name")
         win.contentView          = NSHostingView(rootView: content)
         win.isReleasedWhenClosed = false
         win.delegate             = self
@@ -115,13 +115,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         let menu = NSMenu()
 
-        let di = NSMenuItem(title: "断开连接", action: #selector(disconnectVPN), keyEquivalent: "")
+        let di = NSMenuItem(title: L("menu.disconnect"), action: #selector(disconnectVPN), keyEquivalent: "")
         di.target = self
         menu.addItem(di)
 
         menu.addItem(.separator())
 
-        let qi = NSMenuItem(title: "退出", action: #selector(quitApp), keyEquivalent: "")
+        let qi = NSMenuItem(title: L("menu.quit"), action: #selector(quitApp), keyEquivalent: "")
         qi.target = self
         menu.addItem(qi)
 
