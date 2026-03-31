@@ -7,6 +7,10 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+// MinClientVersion is the minimum client version the server will accept.
+// Bump this whenever a client update should be enforced.
+const MinClientVersion = "1.0.1"
+
 type DatabaseConfig struct {
 	URL      string `yaml:"url"`
 	PoolSize int    `yaml:"pool_size"`
@@ -114,7 +118,7 @@ func Load() (*Config, error) {
 		cfg.Server.WSPort = 8888
 	}
 	if cfg.Client.MinVersion == "" {
-		cfg.Client.MinVersion = "1.0.0"
+		cfg.Client.MinVersion = MinClientVersion
 	}
 	return &cfg, nil
 }
