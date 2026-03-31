@@ -159,13 +159,62 @@ redis-cli ping   # should print PONG
 cp server/config.example.yaml server/config.yaml
 ```
 
-Edit `server/config.yaml` — fill in your server IP, Reality keys, and generate an admin password hash:
+`config.yaml` full field reference:
+
+```yaml
+database:
+  url: "postgresql://YOUR_USER@localhost/weiai_vpn"
+
+redis:
+  url: "redis://localhost:6379/0"
+
+server:
+  ip: "YOUR_SERVER_IP"          # public IP, written into VPN configs issued to clients
+  port: 443                     # sing-box VLESS listen port
+  public_key: "..."             # from: sing-box generate reality-keypair
+  private_key: "..."
+  short_id: "a1b2c3d4"         # 8 hex chars
+  server_name: "www.apple.com"  # SNI masquerade host
+
+auth:
+  jwt_secret: "32+ random chars"
+  jwt_expiry_minutes: 15
+  refresh_expiry_hours: 24
+
+admin:
+  allowed_lan_prefixes: ["127.", "192.168.", "10.", "172.16."]
+  username: "admin"
+  password_hash: ""             # generate below
+
+certs:
+  cert_path: "certs/server.crt"
+  key_path:  "certs/server.key"
+
+sing_box:
+  config_path: "sing-box-server.json"
+  binary_path: "/usr/local/bin/sing-box"  # or: /opt/homebrew/bin/sing-box
+  clash_api_url: "http://127.0.0.1:9090"
+
+geoip:
+  db_path: "GeoLite2-City.mmdb"
+
+log:
+  retention_days: 90
+  max_domains_per_user_per_day: 500
+
+client:
+  min_version: "1.0.0"          # clients older than this get HTTP 426
+  download_url: "https://YOUR_SERVER_IP:9443/download/client"
+  client_zip_path: "/absolute/path/to/client/dist/为爱鼓掌.zip"
+```
+
+Generate admin password hash:
 
 ```bash
 htpasswd -bnBC 10 "" yourpassword | tr -d ':\n'
+# or without Apache tools:
+go run golang.org/x/crypto/bcrypt@latest yourpassword
 ```
-
-Paste the output into `admin.password_hash` in config.yaml. Also set `client.client_zip_path` to the absolute path of your client zip (e.g. `/Users/you/Developer/VPN/client/dist/为爱鼓掌.zip`).
 
 **`config.yaml` is gitignored** — it contains your private keys and password hash. Never commit it.
 
@@ -196,13 +245,55 @@ curl -k https://localhost:9443/health
 # {"status":"ok","version":"1.0.0"}
 ```
 
-### 12. Run as a LaunchAgent (auto-start on login)
+### 12. Run as LaunchAgents (auto-start on login)
 
+Both sing-box and the auth server should run as LaunchAgents so they restart on crash and start at login.
+
+**sing-box:**
+```bash
+# Edit the plist — replace YOUR_USERNAME and set the config path
+cp server/launchagents/com.sing-box.vpn.plist ~/Library/LaunchAgents/
+# Open it and update the sing-box binary path and config path
+launchctl load ~/Library/LaunchAgents/com.sing-box.vpn.plist
+```
+
+**Auth server:**
 ```bash
 # Edit the plist — replace YOUR_USERNAME and set WEIAI_CONFIG path
 cp server/launchagents/com.weiai.authserver.plist ~/Library/LaunchAgents/
 launchctl load ~/Library/LaunchAgents/com.weiai.authserver.plist
 ```
+
+To reload after config changes:
+```bash
+launchctl kickstart -k gui/$(id -u)/com.weiai.authserver
+launchctl kickstart -k gui/$(id -u)/com.sing-box.vpn
+```
+
+---
+
+## Upgrading from v1.0.0
+
+If you have an existing database from v1.0.0, run the migration to add speed limit and quota columns:
+
+```bash
+psql weiai_vpn < server/db/migration_001_user_limits.sql
+```
+
+Then rebuild and restart the auth server. No data is lost — the new columns default to `NULL` (unlimited).
+
+---
+
+## First User Setup
+
+After the server is running, open `https://YOUR_SERVER_IP:9443/admin` in a browser on your LAN.
+
+1. Log in with your admin credentials
+2. Go to **Users → New User**, create a username and password
+3. Click **Reg. Code** next to the user — copy the 8-character code (valid 15 minutes)
+4. Send `为爱鼓掌.zip` and the code to the user
+5. User installs the app, enters their username/password, then the registration code on first launch
+6. Future logins on the same Mac require only username and password
 
 ---
 
