@@ -5,12 +5,16 @@ CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 
 -- VPN users
 CREATE TABLE IF NOT EXISTS users (
-    id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    username      VARCHAR(64) UNIQUE NOT NULL,
-    password_hash VARCHAR(128) NOT NULL,
-    is_active     BOOLEAN DEFAULT true,
-    created_at    TIMESTAMP DEFAULT NOW(),
-    notes         TEXT
+    id                   UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    username             VARCHAR(64) UNIQUE NOT NULL,
+    password_hash        VARCHAR(128) NOT NULL,
+    is_active            BOOLEAN DEFAULT true,
+    created_at           TIMESTAMP DEFAULT NOW(),
+    notes                TEXT,
+    speed_limit_up_kbps   INT    DEFAULT NULL,
+    speed_limit_down_kbps INT    DEFAULT NULL,
+    quota_bytes           BIGINT DEFAULT NULL,
+    quota_period          TEXT   DEFAULT NULL CHECK (quota_period IN ('daily', 'weekly', 'monthly'))
 );
 
 -- Registered devices (max 1 active per user at a time)

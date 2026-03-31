@@ -76,6 +76,18 @@ func main() {
 	engine.AddFunc("add", func(a, b int64) int64 { return a + b })
 	engine.AddFunc("not", func(b bool) bool { return !b })
 	engine.AddFunc("t", i18n.T)
+	engine.AddFunc("toGBPtr", func(p *int64) string {
+		if p == nil {
+			return ""
+		}
+		return fmt.Sprintf("%.1f", float64(*p)/1073741824)
+	})
+	engine.AddFunc("kbpsToMbps", func(p *int) string {
+		if p == nil {
+			return ""
+		}
+		return fmt.Sprintf("%.1f", float64(*p)/1000)
+	})
 
 	// Language middleware — reads lang cookie, sets i18n.Current before each request
 	langMW := func(c *fiber.Ctx) error {
@@ -112,6 +124,7 @@ func main() {
 	app.Post("/verify-device", rateLimitMW, apiH.VerifyDevice)
 	app.Post("/disconnect", apiH.Disconnect)
 	app.Post("/refresh", apiH.Refresh)
+	app.Get("/status", apiH.Status)
 
 	// Admin routes
 	app.Get("/admin/login", lanMW, adminH.LoginPage)
@@ -127,6 +140,7 @@ func main() {
 	app.Post("/admin/users/:id/toggle", adminAuthMW, adminH.ToggleUser)
 	app.Post("/admin/users/:id/kick", adminAuthMW, adminH.KickUser)
 	app.Get("/admin/users/:id/verif-code", adminAuthMW, adminH.GenerateVerifCode)
+	app.Post("/admin/users/:id/limits", adminAuthMW, adminH.UpdateUserLimits)
 	app.Get("/admin/logs", adminAuthMW, adminH.LogsPage)
 	app.Get("/admin/stats", adminAuthMW, adminH.StatsPage)
 	app.Get("/admin/lang", lanMW, adminH.SetLang)

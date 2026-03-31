@@ -11,6 +11,14 @@ import (
 	"github.com/luvxinc/vpn/server/models"
 )
 
+// quotaPeriodSQL maps period names to SQL expressions for the start of the period.
+const quotaPeriodSQL = `CASE
+    WHEN $2 = 'daily'   THEN CURRENT_DATE::TIMESTAMP
+    WHEN $2 = 'weekly'  THEN date_trunc('week', CURRENT_TIMESTAMP)
+    WHEN $2 = 'monthly' THEN date_trunc('month', CURRENT_TIMESTAMP)
+    ELSE CURRENT_TIMESTAMP
+END`
+
 type DB struct {
 	pool *pgxpool.Pool
 }
@@ -218,7 +226,8 @@ func (d *DB) GetUsers(ctx context.Context) ([]models.UserRow, error) {
 	rows, err := d.pool.Query(ctx,
 		`SELECT u.id, u.username, u.is_active, u.created_at,
 		        d.last_seen, d.device_name,
-		        (SELECT COUNT(*) FROM sessions s2 WHERE s2.user_id=u.id AND s2.is_active=true) AS online
+		        (SELECT COUNT(*) FROM sessions s2 WHERE s2.user_id=u.id AND s2.is_active=true) AS online,
+		        u.speed_limit_up_kbps, u.speed_limit_down_kbps, u.quota_bytes, u.quota_period
 		 FROM users u
 		 LEFT JOIN devices d ON d.user_id=u.id AND d.is_active=true
 		 ORDER BY u.created_at DESC`,
@@ -231,12 +240,51 @@ func (d *DB) GetUsers(ctx context.Context) ([]models.UserRow, error) {
 	for rows.Next() {
 		var u models.UserRow
 		if err := rows.Scan(&u.ID, &u.Username, &u.IsActive, &u.CreatedAt,
-			&u.LastSeen, &u.DeviceName, &u.Online); err != nil {
+			&u.LastSeen, &u.DeviceName, &u.Online,
+			&u.SpeedLimitUpKbps, &u.SpeedLimitDownKbps, &u.QuotaBytes, &u.QuotaPeriod); err != nil {
 			return nil, err
 		}
 		out = append(out, u)
 	}
 	return out, rows.Err()
+}
+
+// GetUserLimits returns speed limits and quota settings for a user.
+func (d *DB) GetUserLimits(ctx context.Context, userID uuid.UUID) (models.UserLimitsRow, error) {
+	var r models.UserLimitsRow
+	err := d.pool.QueryRow(ctx,
+		`SELECT speed_limit_up_kbps, speed_limit_down_kbps, quota_bytes, quota_period
+		 FROM users WHERE id=$1`,
+		userID,
+	).Scan(&r.SpeedLimitUpKbps, &r.SpeedLimitDownKbps, &r.QuotaBytes, &r.QuotaPeriod)
+	return r, err
+}
+
+// SetUserLimits updates speed limits and quota for a user.
+func (d *DB) SetUserLimits(ctx context.Context, userID uuid.UUID, speedUpKbps, speedDownKbps *int, quotaBytes *int64, quotaPeriod *string) error {
+	_, err := d.pool.Exec(ctx,
+		`UPDATE users SET speed_limit_up_kbps=$1, speed_limit_down_kbps=$2,
+		 quota_bytes=$3, quota_period=$4 WHERE id=$5`,
+		speedUpKbps, speedDownKbps, quotaBytes, quotaPeriod, userID,
+	)
+	return err
+}
+
+// GetQuotaUsed returns total bytes used and the next reset time for the given period.
+// period must be "daily", "weekly", or "monthly".
+func (d *DB) GetQuotaUsed(ctx context.Context, userID uuid.UUID, period string) (used int64, resetsAt time.Time, err error) {
+	err = d.pool.QueryRow(ctx,
+		fmt.Sprintf(`SELECT COALESCE(SUM(upload_bytes + download_bytes), 0),
+		        CASE WHEN $2 = 'daily'   THEN (CURRENT_DATE + INTERVAL '1 day')::TIMESTAMP
+		             WHEN $2 = 'weekly'  THEN (date_trunc('week', CURRENT_TIMESTAMP) + INTERVAL '7 days')::TIMESTAMP
+		             WHEN $2 = 'monthly' THEN (date_trunc('month', CURRENT_TIMESTAMP) + INTERVAL '1 month')::TIMESTAMP
+		             ELSE NOW()
+		        END
+		 FROM sessions
+		 WHERE user_id = $1 AND connected_at >= %s`, quotaPeriodSQL),
+		userID, period,
+	).Scan(&used, &resetsAt)
+	return
 }
 
 // CreateUser inserts a new user. Returns error on duplicate username.

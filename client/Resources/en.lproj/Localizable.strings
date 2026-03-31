@@ -47,6 +47,12 @@
 "error.osascriptFailed" = "Cannot run system script";
 "error.authCancelled" = "Authorization cancelled, VPN not started";
 
+/* Quota & speed limits */
+"error.quotaExceeded" = "Traffic quota exceeded";
+"quota.resetsIn" = "Resets";
+"ks.quota.title" = "Traffic Quota Exceeded";
+"ks.quota.message" = "You have used your full traffic quota. VPN has been disconnected.";
+
 /* Kill switch */
 "ks.startup.title" = "VPN Was Disconnected";
 "ks.startup.message" = "A previous VPN session ended unexpectedly. Network is currently blocked to prevent data leaks.";

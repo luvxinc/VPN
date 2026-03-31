@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"fmt"
 	"math/big"
+	"strconv"
 	"strings"
 	"time"
 
@@ -394,6 +395,56 @@ func KickUserSessions(ctx context.Context, db *store.DB, rdb *store.Redis, cfg *
 	// Update sing-box to a random UUID so the old user can't connect
 	singbox.UpdateUUID(cfg.SingBox.ConfigPath, uuid.New().String())
 	return nil
+}
+
+// ── User Limits ───────────────────────────────────────────────────────────────
+
+func (h *AdminHandler) UpdateUserLimits(c *fiber.Ctx) error {
+	userID, err := uuid.Parse(c.Params("id"))
+	if err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"detail": "Invalid user ID"})
+	}
+
+	var speedUp, speedDown *int
+	var quotaBytes *int64
+	var quotaPeriod *string
+
+	if v := c.FormValue("speed_limit_up_kbps"); v != "" {
+		n, err := strconv.Atoi(v)
+		if err == nil && n > 0 {
+			speedUp = &n
+		}
+	}
+	if v := c.FormValue("speed_limit_down_kbps"); v != "" {
+		n, err := strconv.Atoi(v)
+		if err == nil && n > 0 {
+			speedDown = &n
+		}
+	}
+	if v := c.FormValue("quota_gb"); v != "" {
+		gb, err := strconv.ParseFloat(v, 64)
+		if err == nil && gb > 0 {
+			b := int64(gb * 1073741824) // 1 GB = 1024^3 bytes
+			quotaBytes = &b
+		}
+	}
+	if v := c.FormValue("quota_period"); v == "daily" || v == "weekly" || v == "monthly" {
+		quotaPeriod = &v
+	}
+	// quota_period requires quota_bytes; clear both if no quota set
+	if quotaBytes == nil {
+		quotaPeriod = nil
+	}
+
+	ctx := c.Context()
+	if err := h.DB.SetUserLimits(ctx, userID, speedUp, speedDown, quotaBytes, quotaPeriod); err != nil {
+		return err
+	}
+
+	// Notify connected clients of policy change
+	h.RDB.SetPolicyChanged(ctx, userID.String())
+
+	return c.Redirect("/admin/users", fiber.StatusSeeOther)
 }
 
 // ── GenCode ───────────────────────────────────────────────────────────────────

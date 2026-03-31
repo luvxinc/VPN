@@ -21,13 +21,22 @@
         <th class="px-4 py-3 text-left">{{t "users.colDevice"}}</th>
         <th class="px-4 py-3 text-left">{{t "users.colSeen"}}</th>
         <th class="px-4 py-3 text-left">{{t "users.colCreated"}}</th>
-        <th class="px-4 py-3 text-right">{{t "users.colActions"}}</th>
+        <th class="px-4 py-3 text-left">{{t "users.colActions"}}</th>
       </tr>
     </thead>
     <tbody class="divide-y divide-gray-800">
       {{range .Users}}
       <tr class="hover:bg-gray-800/50" id="user-row-{{.ID}}">
-        <td class="px-4 py-3 font-medium text-white">{{.Username}}</td>
+        <td class="px-4 py-3">
+          <div class="font-medium text-white">{{.Username}}</div>
+          {{if or .SpeedLimitUpKbps .SpeedLimitDownKbps .QuotaBytes}}
+          <div class="flex flex-wrap gap-1 mt-1">
+            {{if .SpeedLimitUpKbps}}<span class="text-xs bg-blue-900/40 text-blue-300 px-1.5 py-0.5 rounded">↑{{kbpsToMbps .SpeedLimitUpKbps}}M</span>{{end}}
+            {{if .SpeedLimitDownKbps}}<span class="text-xs bg-blue-900/40 text-blue-300 px-1.5 py-0.5 rounded">↓{{kbpsToMbps .SpeedLimitDownKbps}}M</span>{{end}}
+            {{if .QuotaBytes}}<span class="text-xs bg-purple-900/40 text-purple-300 px-1.5 py-0.5 rounded">{{toGBPtr .QuotaBytes}}G{{if .QuotaPeriod}}/{{.QuotaPeriod}}{{end}}</span>{{end}}
+          </div>
+          {{end}}
+        </td>
         <td class="px-4 py-3">
           {{if gt .Online 0}}
             <span class="inline-flex items-center gap-1 text-xs bg-green-900/50 text-green-400 px-2 py-0.5 rounded-full">
@@ -62,6 +71,11 @@
               </button>
             </form>
             {{end}}
+            <!-- Speed limits & quota -->
+            <button onclick="openLimitsModal('{{.ID}}', '{{.Username}}', '{{if .SpeedLimitUpKbps}}{{.SpeedLimitUpKbps}}{{end}}', '{{if .SpeedLimitDownKbps}}{{.SpeedLimitDownKbps}}{{end}}', '{{toGBPtr .QuotaBytes}}', '{{if .QuotaPeriod}}{{.QuotaPeriod}}{{end}}')"
+                    class="text-xs text-purple-400 hover:text-purple-300 px-2 py-1 rounded hover:bg-purple-900/30 transition-colors">
+              {{t "users.limits"}}
+            </button>
             <!-- Change password -->
             <button onclick="openPasswordModal('{{.ID}}', '{{.Username}}')"
                     class="text-xs text-blue-400 hover:text-blue-300 px-2 py-1 rounded hover:bg-blue-900/30 transition-colors">
@@ -148,6 +162,55 @@
   </div>
 </div>
 
+<!-- Speed limits & quota modal -->
+<div id="limits-modal" class="hidden fixed inset-0 bg-black/60 flex items-center justify-center z-50">
+  <div class="bg-gray-900 border border-gray-700 rounded-2xl p-6 w-full max-w-sm shadow-xl">
+    <h3 class="text-lg font-bold text-white mb-1">{{t "modal.limits.title"}}</h3>
+    <p class="text-sm text-gray-400 mb-4" id="limits-modal-username"></p>
+    <form id="limits-form" method="post" class="space-y-3">
+      <div class="grid grid-cols-2 gap-3">
+        <div>
+          <label class="block text-xs text-gray-400 mb-1">↑ Upload (Kbps)</label>
+          <input type="number" name="speed_limit_up_kbps" id="limits-up" min="0" placeholder="unlimited"
+                 class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:ring-2 focus:ring-purple-500">
+        </div>
+        <div>
+          <label class="block text-xs text-gray-400 mb-1">↓ Download (Kbps)</label>
+          <input type="number" name="speed_limit_down_kbps" id="limits-down" min="0" placeholder="unlimited"
+                 class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:ring-2 focus:ring-purple-500">
+        </div>
+      </div>
+      <div class="grid grid-cols-2 gap-3">
+        <div>
+          <label class="block text-xs text-gray-400 mb-1">Quota (GB)</label>
+          <input type="number" name="quota_gb" id="limits-quota" min="0" step="0.1" placeholder="unlimited"
+                 class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:ring-2 focus:ring-purple-500">
+        </div>
+        <div>
+          <label class="block text-xs text-gray-400 mb-1">{{t "modal.limits.quotaPeriod"}}</label>
+          <select name="quota_period" id="limits-period"
+                  class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:ring-2 focus:ring-purple-500">
+            <option value="monthly">{{t "modal.limits.monthly"}}</option>
+            <option value="weekly">{{t "modal.limits.weekly"}}</option>
+            <option value="daily">{{t "modal.limits.daily"}}</option>
+          </select>
+        </div>
+      </div>
+      <p class="text-xs text-gray-500">{{t "modal.limits.unlimited"}}</p>
+      <div class="flex gap-3 pt-2">
+        <button type="button" onclick="document.getElementById('limits-modal').classList.add('hidden')"
+                class="flex-1 bg-gray-700 hover:bg-gray-600 text-white py-2 rounded-lg text-sm transition-colors">
+          {{t "modal.limits.cancel"}}
+        </button>
+        <button type="submit"
+                class="flex-1 bg-purple-600 hover:bg-purple-500 text-white py-2 rounded-lg text-sm font-medium transition-colors">
+          {{t "modal.limits.save"}}
+        </button>
+      </div>
+    </form>
+  </div>
+</div>
+
 <!-- Verification code modal -->
 <div id="code-modal" class="hidden fixed inset-0 bg-black/60 flex items-center justify-center z-50">
   <div class="bg-gray-900 border border-gray-700 rounded-2xl p-6 w-full max-w-sm shadow-xl">
@@ -168,6 +231,17 @@ function openPasswordModal(userId, username) {
   document.getElementById('pw-modal-username').textContent = username;
   document.getElementById('pw-form').action = '/admin/users/' + userId + '/password';
   document.getElementById('pw-modal').classList.remove('hidden');
+}
+
+function openLimitsModal(userId, username, upKbps, downKbps, quotaGB, quotaPeriod) {
+  document.getElementById('limits-modal-username').textContent = username;
+  document.getElementById('limits-form').action = '/admin/users/' + userId + '/limits';
+  document.getElementById('limits-up').value = upKbps || '';
+  document.getElementById('limits-down').value = downKbps || '';
+  document.getElementById('limits-quota').value = quotaGB || '';
+  var sel = document.getElementById('limits-period');
+  sel.value = quotaPeriod || 'monthly';
+  document.getElementById('limits-modal').classList.remove('hidden');
 }
 
 document.addEventListener('htmx:afterSwap', function(e) {

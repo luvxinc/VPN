@@ -185,3 +185,17 @@ func (r *Redis) TTL(ctx context.Context, key string) (int64, error) {
 func (r *Redis) FlushDB(ctx context.Context) error {
 	return r.client.Do(ctx, r.client.B().Flushdb().Build()).Error()
 }
+
+// SetPolicyChanged marks that a user's policy was recently changed by admin.
+// The flag expires after 5 minutes so clients that are offline won't see stale flags.
+func (r *Redis) SetPolicyChanged(ctx context.Context, userID string) {
+	r.client.Do(ctx, r.client.B().Setex().Key("policy_changed:"+userID).Seconds(300).Value("1").Build())
+}
+
+// GetAndDeletePolicyChanged returns true and removes the flag if it exists.
+func (r *Redis) GetAndDeletePolicyChanged(ctx context.Context, userID string) bool {
+	key := "policy_changed:" + userID
+	resp := r.client.Do(ctx, r.client.B().Getdel().Key(key).Build())
+	val, err := resp.ToString()
+	return err == nil && val == "1"
+}

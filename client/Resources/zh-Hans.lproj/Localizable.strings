@@ -47,6 +47,12 @@
 "error.osascriptFailed" = "无法运行 osascript";
 "error.authCancelled" = "已取消授权，VPN 未启动";
 
+/* Quota & speed limits */
+"error.quotaExceeded" = "流量配额已用尽";
+"quota.resetsIn" = "重置时间";
+"ks.quota.title" = "流量配额已用尽";
+"ks.quota.message" = "您的流量配额已使用完毕，VPN 已自动断开。";
+
 /* Kill switch */
 "ks.startup.title" = "上次 VPN 异常断开";
 "ks.startup.message" = "检测到上次 VPN 异常退出，网络当前处于封锁状态，防止数据泄漏。";

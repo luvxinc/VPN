@@ -22,6 +22,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             name: .vpnKillSwitchActivated,
             object: nil
         )
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleQuotaExceeded(_:)),
+            name: .vpnQuotaExceeded,
+            object: nil
+        )
 
         // If kill switch was active from a previous crash, handle before showing UI
         var killSwitchHandled = false
@@ -94,6 +100,25 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         )
     }
 
+    @objc private func handleQuotaExceeded(_ notification: Notification) {
+        let resetsAt = notification.object as? Date
+        let alert = NSAlert()
+        alert.messageText     = L("ks.quota.title")
+        alert.informativeText = quotaExceededMessage(resetsAt: resetsAt)
+        alert.alertStyle      = .warning
+        alert.addButton(withTitle: L("ks.quit.confirm"))
+        NSApp.activate(ignoringOtherApps: true)
+        alert.runModal()
+        switchToConnectWindow()
+    }
+
+    private func quotaExceededMessage(resetsAt: Date?) -> String {
+        guard let d = resetsAt else { return L("ks.quota.message") }
+        let f = RelativeDateTimeFormatter()
+        f.unitsStyle = .full
+        return L("ks.quota.message") + "\n" + L("quota.resetsIn") + " " + f.localizedString(for: d, relativeTo: Date())
+    }
+
     private func switchToConnectWindow() {
         refreshTimer?.invalidate()
         refreshTimer = nil
@@ -109,33 +134,87 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func setupStatusItem() {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-
         guard let btn = statusItem?.button else { return }
         btn.title = "❤"
-
-        let menu = NSMenu()
-
-        let di = NSMenuItem(title: L("menu.disconnect"), action: #selector(disconnectVPN), keyEquivalent: "")
-        di.target = self
-        menu.addItem(di)
-
-        menu.addItem(.separator())
-
-        let qi = NSMenuItem(title: L("menu.quit"), action: #selector(quitApp), keyEquivalent: "")
-        qi.target = self
-        menu.addItem(qi)
-
-        statusItem?.menu = menu
+        rebuildMenu()
     }
 
     private func refreshStatusTitle() {
         guard let btn = statusItem?.button else { return }
+        var parts: [String] = []
         if let speed = monitor.currentSpeed {
-            btn.title = "❤ \(speed.menuBarText)"
-        } else {
-            btn.title = "❤"
+            parts.append(speed.menuBarText)
         }
+        // Quota usage (e.g. "345G/1024G")
+        let p = vpn.policy
+        if let quotaBytes = p.quotaBytes {
+            let usedGB = Double(p.quotaUsedBytes) / 1_073_741_824
+            let totalGB = Double(quotaBytes) / 1_073_741_824
+            if totalGB >= 1 {
+                parts.append(String(format: "%.0fG/%.0fG", usedGB, totalGB))
+            } else {
+                parts.append(String(format: "%.1fG/%.1fG", usedGB, totalGB))
+            }
+        }
+        btn.title = parts.isEmpty ? "❤" : "❤ " + parts.joined(separator: "  ")
+
+        // Rebuild menu to show fresh latency / quota info
+        rebuildMenu()
     }
+
+    private func rebuildMenu() {
+        guard let item = statusItem else { return }
+        let menu = NSMenu()
+
+        // Latency
+        if let ms = vpn.latencyMs {
+            let lat = NSMenuItem(title: "⚡ \(ms) ms", action: nil, keyEquivalent: "")
+            lat.isEnabled = false
+            menu.addItem(lat)
+        }
+
+        // Quota info
+        let p = vpn.policy
+        if let quotaBytes = p.quotaBytes, let period = p.quotaPeriod {
+            let usedGB  = String(format: "%.1f", Double(p.quotaUsedBytes) / 1_073_741_824)
+            let totalGB = String(format: "%.1f", Double(quotaBytes) / 1_073_741_824)
+            let qi = NSMenuItem(title: "📊 \(usedGB)G / \(totalGB)G (\(period))", action: nil, keyEquivalent: "")
+            qi.isEnabled = false
+            menu.addItem(qi)
+            if let resets = p.quotaResetsAt {
+                let f = RelativeDateTimeFormatter()
+                f.unitsStyle = .abbreviated
+                let ri = NSMenuItem(title: "🔄 " + f.localizedString(for: resets, relativeTo: Date()), action: nil, keyEquivalent: "")
+                ri.isEnabled = false
+                menu.addItem(ri)
+            }
+            menu.addItem(.separator())
+        } else if latencyMs != nil {
+            menu.addItem(.separator())
+        }
+
+        // Speed limits
+        if p.speedLimitUpKbps != nil || p.speedLimitDownKbps != nil {
+            var speedParts: [String] = []
+            if let up   = p.speedLimitUpKbps   { speedParts.append("↑\(up/1000)M") }
+            if let down = p.speedLimitDownKbps { speedParts.append("↓\(down/1000)M") }
+            let si = NSMenuItem(title: "🚦 " + speedParts.joined(separator: "  "), action: nil, keyEquivalent: "")
+            si.isEnabled = false
+            menu.addItem(si)
+            menu.addItem(.separator())
+        }
+
+        let di = NSMenuItem(title: L("menu.disconnect"), action: #selector(disconnectVPN), keyEquivalent: "")
+        di.target = self
+        menu.addItem(di)
+        menu.addItem(.separator())
+        let qi2 = NSMenuItem(title: L("menu.quit"), action: #selector(quitApp), keyEquivalent: "")
+        qi2.target = self
+        menu.addItem(qi2)
+        item.menu = menu
+    }
+
+    private var latencyMs: Int? { vpn.latencyMs }
 
     // MARK: - Disconnect / Quit
 

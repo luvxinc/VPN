@@ -13,6 +13,33 @@ struct VPNConfig {
     let serverName: String
 }
 
+struct UserPolicy {
+    let speedLimitUpKbps: Int?      // nil = unlimited
+    let speedLimitDownKbps: Int?    // nil = unlimited
+    let quotaBytes: Int64?          // nil = unlimited
+    let quotaPeriod: String?        // "daily" / "weekly" / "monthly" / nil
+    let quotaUsedBytes: Int64
+    let quotaResetsAt: Date?        // nil when no quota
+    let quotaExceeded: Bool
+
+    static let unlimited = UserPolicy(
+        speedLimitUpKbps: nil, speedLimitDownKbps: nil,
+        quotaBytes: nil, quotaPeriod: nil,
+        quotaUsedBytes: 0, quotaResetsAt: nil, quotaExceeded: false
+    )
+}
+
+struct PolicyStatus {
+    let speedLimitUpKbps: Int?
+    let speedLimitDownKbps: Int?
+    let quotaBytes: Int64?
+    let quotaPeriod: String?
+    let quotaUsedBytes: Int64
+    let quotaResetsAt: Date?
+    let quotaExceeded: Bool
+    let policyChanged: Bool
+}
+
 enum AuthError: LocalizedError {
     case unexpectedResponse
     case invalidResponse
@@ -20,6 +47,7 @@ enum AuthError: LocalizedError {
     case serverOffline
     case networkError(Error)
     case updateRequired(downloadURL: String)
+    case quotaExceeded(resetsAt: Date?)
     case serverError(Int, String)
 
     var errorDescription: String {
@@ -30,6 +58,13 @@ enum AuthError: LocalizedError {
         case .serverOffline:            return L("error.serverOffline")
         case .networkError(let e):      return _friendlyNetworkError(e)
         case .updateRequired:           return L("error.updateRequired")
+        case .quotaExceeded(let d):
+            if let d = d {
+                let f = RelativeDateTimeFormatter()
+                f.unitsStyle = .full
+                return L("error.quotaExceeded") + " · " + f.localizedString(for: d, relativeTo: Date())
+            }
+            return L("error.quotaExceeded")
         case .serverError(let code, let msg):
             if code == 401 { return L("error.invalidCredentials") }
             if code == 429 { return L("error.rateLimited") }
@@ -86,8 +121,9 @@ final class AuthService: NSObject {
 
     // MARK: - Connect
 
-    func connect(username: String, password: String,
-                 completion: @escaping (Result<VPNConfig, AuthError>) -> Void) {
+    typealias ConnectCompletion = (Result<(VPNConfig, UserPolicy), AuthError>) -> Void
+
+    func connect(username: String, password: String, completion: @escaping ConnectCompletion) {
         KeychainHelper.save(username, for: .username)
         KeychainHelper.save(password, for: .password)
 
@@ -101,7 +137,7 @@ final class AuthService: NSObject {
     }
 
     func verifyDevice(username: String, password: String, code: String,
-                      completion: @escaping (Result<VPNConfig, AuthError>) -> Void) {
+                      completion: @escaping ConnectCompletion) {
         let body: [String: Any] = [
             "username":          username,
             "password":          password,
@@ -166,10 +202,62 @@ final class AuthService: NSObject {
         }.resume()
     }
 
+    // MARK: - Status polling
+
+    func fetchStatus(completion: @escaping (PolicyStatus?) -> Void) {
+        guard let url = URL(string: "\(config.authURL)/status?device_id=\(deviceID)") else {
+            completion(nil); return
+        }
+        var req = URLRequest(url: url, timeoutInterval: 10)
+        req.httpMethod = "GET"
+        session.dataTask(with: req) { data, response, _ in
+            guard let http = response as? HTTPURLResponse, http.statusCode == 200,
+                  let data = data,
+                  let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+            else { completion(nil); return }
+            completion(Self.parseStatus(json))
+        }.resume()
+    }
+
     // MARK: - Private
 
+    private static func parsePolicy(_ json: [String: Any]) -> UserPolicy {
+        let p = json["policy"] as? [String: Any] ?? [:]
+        return UserPolicy(
+            speedLimitUpKbps:   p["speed_limit_up_kbps"]   as? Int,
+            speedLimitDownKbps: p["speed_limit_down_kbps"] as? Int,
+            quotaBytes:         (p["quota_bytes"] as? NSNumber).map { $0.int64Value },
+            quotaPeriod:        p["quota_period"] as? String,
+            quotaUsedBytes:     (p["quota_used_bytes"] as? NSNumber)?.int64Value ?? 0,
+            quotaResetsAt:      Self.parseDate(p["quota_resets_at"] as? String),
+            quotaExceeded:      (p["quota_exceeded"] as? Bool) ?? false
+        )
+    }
+
+    private static func parseStatus(_ json: [String: Any]) -> PolicyStatus {
+        return PolicyStatus(
+            speedLimitUpKbps:   json["speed_limit_up_kbps"]   as? Int,
+            speedLimitDownKbps: json["speed_limit_down_kbps"] as? Int,
+            quotaBytes:         (json["quota_bytes"] as? NSNumber).map { $0.int64Value },
+            quotaPeriod:        json["quota_period"] as? String,
+            quotaUsedBytes:     (json["quota_used_bytes"] as? NSNumber)?.int64Value ?? 0,
+            quotaResetsAt:      Self.parseDate(json["quota_resets_at"] as? String),
+            quotaExceeded:      (json["quota_exceeded"] as? Bool) ?? false,
+            policyChanged:      (json["policy_changed"] as? Bool) ?? false
+        )
+    }
+
+    private static func parseDate(_ str: String?) -> Date? {
+        guard let str = str else { return nil }
+        let f = ISO8601DateFormatter()
+        f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        if let d = f.date(from: str) { return d }
+        f.formatOptions = [.withInternetDateTime]
+        return f.date(from: str)
+    }
+
     private func post(path: String, body: [String: Any],
-                      completion: @escaping (Result<VPNConfig, AuthError>) -> Void) {
+                      completion: @escaping ConnectCompletion) {
         guard let url = URL(string: "\(config.authURL)\(path)") else { return }
 
         var req = URLRequest(url: url, timeoutInterval: 15)
@@ -216,6 +304,17 @@ final class AuthService: NSObject {
                 return
             }
 
+            // 403 quota_exceeded
+            if http.statusCode == 403,
+               let data = data,
+               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+               let detail = json["detail"] as? [String: Any],
+               (detail["error"] as? String) == "quota_exceeded" {
+                let resetsAt = Self.parseDate(detail["quota_resets_at"] as? String)
+                completion(.failure(.quotaExceeded(resetsAt: resetsAt)))
+                return
+            }
+
             guard http.statusCode == 200, let data = data else {
                 let msg = String(data: data ?? Data(), encoding: .utf8) ?? ""
                 completion(.failure(.serverError(http.statusCode, msg)))
@@ -240,8 +339,10 @@ final class AuthService: NSObject {
             KeychainHelper.save(at, for: .accessToken)
             KeychainHelper.save(rt, for: .refreshToken)
 
-            completion(.success(VPNConfig(uuid: uuid, server: srv, port: port,
-                                          publicKey: pub, shortId: sid, serverName: sni)))
+            let policy = Self.parsePolicy(json)
+            completion(.success((VPNConfig(uuid: uuid, server: srv, port: port,
+                                           publicKey: pub, shortId: sid, serverName: sni),
+                                  policy)))
         }.resume()
     }
 }

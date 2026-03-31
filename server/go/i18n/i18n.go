@@ -60,6 +60,20 @@ var En = map[string]string{
 	"users.enable":     "Enable",
 	"users.disable":    "Disable",
 	"users.delete":     "Delete",
+	"users.limits":     "Limits",
+
+	// ── Limits modal ─────────────────────────────────────────────────────────
+	"modal.limits.title":       "Speed Limits & Quota",
+	"modal.limits.speedUp":     "Upload limit (Kbps, empty = unlimited)",
+	"modal.limits.speedDown":   "Download limit (Kbps, empty = unlimited)",
+	"modal.limits.quotaGB":     "Quota (GB, empty = unlimited)",
+	"modal.limits.quotaPeriod": "Quota period",
+	"modal.limits.daily":       "Daily",
+	"modal.limits.weekly":      "Weekly",
+	"modal.limits.monthly":     "Monthly",
+	"modal.limits.cancel":      "Cancel",
+	"modal.limits.save":        "Save",
+	"modal.limits.unlimited":   "Unlimited",
 
 	// ── New user modal ────────────────────────────────────────────────────────
 	"modal.newUser.title":    "New User",
@@ -179,6 +193,20 @@ var Zh = map[string]string{
 	"users.enable":     "启用",
 	"users.disable":    "禁用",
 	"users.delete":     "删除",
+	"users.limits":     "限制",
+
+	// ── Limits modal ─────────────────────────────────────────────────────────
+	"modal.limits.title":       "限速与流量配额",
+	"modal.limits.speedUp":     "上传限速（Kbps，留空 = 不限）",
+	"modal.limits.speedDown":   "下载限速（Kbps，留空 = 不限）",
+	"modal.limits.quotaGB":     "流量配额（GB，留空 = 不限）",
+	"modal.limits.quotaPeriod": "周期",
+	"modal.limits.daily":       "按天",
+	"modal.limits.weekly":      "按周",
+	"modal.limits.monthly":     "按月",
+	"modal.limits.cancel":      "取消",
+	"modal.limits.save":        "保存",
+	"modal.limits.unlimited":   "无限制",
 
 	// ── New user modal ────────────────────────────────────────────────────────
 	"modal.newUser.title":    "新建用户",

@@ -25,11 +25,44 @@ type VlessConfig struct {
 	ServerName string `json:"server_name"`
 }
 
+// UserPolicy contains the per-user speed limit and quota settings
+// returned in ConnectResponse and GET /status.
+type UserPolicy struct {
+	SpeedLimitUpKbps   *int       `json:"speed_limit_up_kbps"`   // nil = unlimited
+	SpeedLimitDownKbps *int       `json:"speed_limit_down_kbps"` // nil = unlimited
+	QuotaBytes         *int64     `json:"quota_bytes"`           // nil = unlimited
+	QuotaPeriod        *string    `json:"quota_period"`          // "daily"/"weekly"/"monthly"/nil
+	QuotaUsedBytes     int64      `json:"quota_used_bytes"`
+	QuotaResetsAt      *time.Time `json:"quota_resets_at"` // nil when no quota
+	QuotaExceeded      bool       `json:"quota_exceeded"`
+}
+
+// PolicyStatus is the response body for GET /status.
+type PolicyStatus struct {
+	SpeedLimitUpKbps   *int       `json:"speed_limit_up_kbps"`
+	SpeedLimitDownKbps *int       `json:"speed_limit_down_kbps"`
+	QuotaBytes         *int64     `json:"quota_bytes"`
+	QuotaPeriod        *string    `json:"quota_period"`
+	QuotaUsedBytes     int64      `json:"quota_used_bytes"`
+	QuotaResetsAt      *time.Time `json:"quota_resets_at"`
+	QuotaExceeded      bool       `json:"quota_exceeded"`
+	PolicyChanged      bool       `json:"policy_changed"`
+}
+
+// UserLimitsRow holds limit settings queried from the users table.
+type UserLimitsRow struct {
+	SpeedLimitUpKbps   *int
+	SpeedLimitDownKbps *int
+	QuotaBytes         *int64
+	QuotaPeriod        *string
+}
+
 // ConnectResponse is the full /connect and /verify-device response body.
 type ConnectResponse struct {
 	AccessToken  string      `json:"access_token"`
 	RefreshToken string      `json:"refresh_token"`
 	VlessConfig  VlessConfig `json:"vless_config"`
+	Policy       UserPolicy  `json:"policy"`
 }
 
 // OnlineSession holds data for the admin dashboard online-users table.
@@ -46,13 +79,17 @@ type OnlineSession struct {
 
 // UserRow holds data for the admin users page.
 type UserRow struct {
-	ID         uuid.UUID
-	Username   string
-	IsActive   bool
-	CreatedAt  time.Time
-	LastSeen   *time.Time
-	DeviceName *string
-	Online     int64
+	ID                 uuid.UUID
+	Username           string
+	IsActive           bool
+	CreatedAt          time.Time
+	LastSeen           *time.Time
+	DeviceName         *string
+	Online             int64
+	SpeedLimitUpKbps   *int
+	SpeedLimitDownKbps *int
+	QuotaBytes         *int64
+	QuotaPeriod        *string
 }
 
 // AccessLogRow holds data for the admin logs page.

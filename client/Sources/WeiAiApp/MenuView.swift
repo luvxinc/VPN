@@ -226,6 +226,8 @@ struct ConnectView: View {
                 errorMsg = nil
             case .updateRequired(let url):
                 updateURL = url
+            case .quotaExceeded(let resetsAt):
+                errorMsg = quotaErrorMessage(resetsAt: resetsAt)
             case .error(let msg):
                 errorMsg = msg
             }
@@ -243,9 +245,19 @@ struct ConnectView: View {
             case .updateRequired(let url):
                 updateURL = url
                 showDeviceCodeForm = false
+            case .quotaExceeded(let resetsAt):
+                errorMsg = quotaErrorMessage(resetsAt: resetsAt)
+                showDeviceCodeForm = false
             case .error(let msg):
                 errorMsg = msg
             }
         }
+    }
+
+    private func quotaErrorMessage(resetsAt: Date?) -> String {
+        guard let d = resetsAt else { return L("error.quotaExceeded") }
+        let f = RelativeDateTimeFormatter()
+        f.unitsStyle = .full
+        return L("error.quotaExceeded") + "\n" + L("quota.resetsIn") + " " + f.localizedString(for: d, relativeTo: Date())
     }
 }

@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
@@ -138,8 +139,35 @@ func (h *APIHandler) createSession(c *fiber.Ctx, userIDStr, fingerprint string, 
 	return vlessUUID, accessToken, refreshToken, nil
 }
 
+// buildPolicy fetches user limits and calculates current quota usage.
+func (h *APIHandler) buildPolicy(ctx context.Context, userID uuid.UUID) models.UserPolicy {
+	limits, err := h.DB.GetUserLimits(ctx, userID)
+	if err != nil {
+		return models.UserPolicy{}
+	}
+	var used int64
+	var resetsAt *time.Time
+	if limits.QuotaPeriod != nil {
+		u, r, err := h.DB.GetQuotaUsed(ctx, userID, *limits.QuotaPeriod)
+		if err == nil {
+			used = u
+			resetsAt = &r
+		}
+	}
+	exceeded := limits.QuotaBytes != nil && used >= *limits.QuotaBytes
+	return models.UserPolicy{
+		SpeedLimitUpKbps:   limits.SpeedLimitUpKbps,
+		SpeedLimitDownKbps: limits.SpeedLimitDownKbps,
+		QuotaBytes:         limits.QuotaBytes,
+		QuotaPeriod:        limits.QuotaPeriod,
+		QuotaUsedBytes:     used,
+		QuotaResetsAt:      resetsAt,
+		QuotaExceeded:      exceeded,
+	}
+}
+
 // vpnResponse builds the ConnectResponse struct.
-func (h *APIHandler) vpnResponse(vlessUUID, accessToken, refreshToken string) models.ConnectResponse {
+func (h *APIHandler) vpnResponse(vlessUUID, accessToken, refreshToken string, policy models.UserPolicy) models.ConnectResponse {
 	srv := h.Cfg.Server
 	return models.ConnectResponse{
 		AccessToken:  accessToken,
@@ -152,6 +180,7 @@ func (h *APIHandler) vpnResponse(vlessUUID, accessToken, refreshToken string) mo
 			ShortID:    srv.ShortID,
 			ServerName: srv.ServerName,
 		},
+		Policy: policy,
 	}
 }
 
@@ -223,12 +252,23 @@ func (h *APIHandler) Connect(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{"detail": "Device not associated with this account"})
 	}
 
+	// Check quota before creating session
+	policy := h.buildPolicy(ctx, userID)
+	if policy.QuotaExceeded {
+		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{
+			"detail": fiber.Map{
+				"error":           "quota_exceeded",
+				"quota_resets_at": policy.QuotaResetsAt,
+			},
+		})
+	}
+
 	vlessUUID, accessToken, refreshToken, err := h.createSession(c, userID.String(), body.DeviceID, deviceID)
 	if err != nil {
 		return err
 	}
 
-	return c.JSON(h.vpnResponse(vlessUUID, accessToken, refreshToken))
+	return c.JSON(h.vpnResponse(vlessUUID, accessToken, refreshToken, policy))
 }
 
 // VerifyDevice handles POST /verify-device.
@@ -302,12 +342,23 @@ func (h *APIHandler) VerifyDevice(c *fiber.Ctx) error {
 		return err
 	}
 
+	// Check quota before creating session
+	policy := h.buildPolicy(ctx, userID)
+	if policy.QuotaExceeded {
+		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{
+			"detail": fiber.Map{
+				"error":           "quota_exceeded",
+				"quota_resets_at": policy.QuotaResetsAt,
+			},
+		})
+	}
+
 	vlessUUID, accessToken, refreshToken, err := h.createSession(c, userID.String(), body.DeviceID, deviceID)
 	if err != nil {
 		return err
 	}
 
-	return c.JSON(h.vpnResponse(vlessUUID, accessToken, refreshToken))
+	return c.JSON(h.vpnResponse(vlessUUID, accessToken, refreshToken, policy))
 }
 
 // Disconnect handles POST /disconnect.
@@ -381,3 +432,59 @@ func (h *APIHandler) Refresh(c *fiber.Ctx) error {
 	return c.JSON(fiber.Map{"access_token": accessToken})
 }
 
+// Status handles GET /status?device_id=...
+// Returns current quota usage, speed limits, and whether policy was recently changed.
+func (h *APIHandler) Status(c *fiber.Ctx) error {
+	deviceID := strings.TrimSpace(c.Query("device_id"))
+	if deviceID == "" {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"detail": "Missing device_id"})
+	}
+
+	ctx := c.Context()
+	raw, err := h.RDB.GetActiveSession(ctx, deviceID)
+	if err != nil {
+		return err
+	}
+	if raw == "" {
+		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"detail": "No active session"})
+	}
+
+	var info models.SessionInfo
+	if err := json.Unmarshal([]byte(raw), &info); err != nil {
+		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"detail": "Invalid session"})
+	}
+
+	userID, err := uuid.Parse(info.UserID)
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"detail": "Invalid user ID in session"})
+	}
+
+	limits, err := h.DB.GetUserLimits(ctx, userID)
+	if err != nil {
+		return err
+	}
+
+	var used int64
+	var resetsAt *time.Time
+	if limits.QuotaPeriod != nil {
+		u, r, err := h.DB.GetQuotaUsed(ctx, userID, *limits.QuotaPeriod)
+		if err == nil {
+			used = u
+			resetsAt = &r
+		}
+	}
+
+	exceeded := limits.QuotaBytes != nil && used >= *limits.QuotaBytes
+	changed := h.RDB.GetAndDeletePolicyChanged(ctx, info.UserID)
+
+	return c.JSON(models.PolicyStatus{
+		SpeedLimitUpKbps:   limits.SpeedLimitUpKbps,
+		SpeedLimitDownKbps: limits.SpeedLimitDownKbps,
+		QuotaBytes:         limits.QuotaBytes,
+		QuotaPeriod:        limits.QuotaPeriod,
+		QuotaUsedBytes:     used,
+		QuotaResetsAt:      resetsAt,
+		QuotaExceeded:      exceeded,
+		PolicyChanged:      changed,
+	})
+}
