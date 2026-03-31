@@ -325,7 +325,7 @@ class VPNManager: ObservableObject {
     ///               the tunnel is actually forwarding traffic before we set isConnected.
     ///
     /// Only returns `true` when both phases pass within `timeout` seconds.
-    private func waitForProxyReady(clashPort: Int = 9091, timeout: TimeInterval = 15.0) -> Bool {
+    private func waitForProxyReady(clashPort: Int = 9091, timeout: TimeInterval = 20.0) -> Bool {
         let deadline = Date().addingTimeInterval(timeout)
 
         // ── Phase 1: Clash API up ──────────────────────────────────────────────
@@ -343,11 +343,14 @@ class VPNManager: ObservableObject {
         }
         guard apiUp else { return false }
 
-        // ── Phase 2: VLESS tunnel connectivity via delay test ──────────────────
-        // Try every possible outbound tag; the one that exists in this config will pass.
+        // ── Phase 2: tunnel connectivity via delay test ─────────────────────────
+        // Try ws-cdn FIRST (Cloudflare responds in ~1-3s and is highly reliable),
+        // then fall back to reality-direct, then the urltest proxy group.
+        // This avoids waiting for reality-direct's long TCP timeout (5-10s) before
+        // discovering that the Cloudflare path works.
         let testURL = "https://cp.cloudflare.com/generate_204"
             .addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
-        for tag in ["proxy", "reality-direct", "ws-cdn"] {
+        for tag in ["ws-cdn", "reality-direct", "proxy"] {
             let remaining = deadline.timeIntervalSinceNow
             guard remaining > 0.5 else { return false }
             let ms = max(1000, Int(remaining * 1000) - 500)

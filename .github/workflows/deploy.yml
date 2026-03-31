@@ -31,5 +31,35 @@ jobs:
           sed -i '' "s/min_version: \".*\"/min_version: \"$MIN\"/" server/config.yaml
           echo "min_version synced to $MIN"
 
+      - name: Inject WS fallback domain into config.yaml
+        working-directory: /Users/aaronsever/Developer/VPN
+        run: |
+          python3 - <<'PYEOF'
+          import re, sys
+          path = "server/config.yaml"
+          txt = open(path).read()
+          domain = "api.superaaron.com"
+          if "ws_fallback_domain" in txt:
+              txt = re.sub(r"ws_fallback_domain:.*", f'ws_fallback_domain: "{domain}"', txt)
+          else:
+              txt = re.sub(r"(  port:.*\n)", rf'\1  ws_fallback_domain: "{domain}"\n', txt, count=1)
+          open(path, "w").write(txt)
+          print(f"ws_fallback_domain set to {domain}")
+          PYEOF
+
+      - name: Fix pf redirect rule (127.0.0.1 → en0 IP for correct LAN routing)
+        run: |
+          EN0_IP=$(ipconfig getifaddr en0 2>/dev/null || echo "")
+          if [ -n "$EN0_IP" ]; then
+            # Replace loopback redirect with the actual interface IP so return-path routing works
+            sudo sed -i '' \
+              "s|rdr pass inet proto tcp from any to any port = 443 -> 127.0.0.1 port 8443|rdr pass on en0 proto tcp from any to any port = 443 -> $EN0_IP port 8443|g" \
+              /etc/pf.conf
+            sudo pfctl -f /etc/pf.conf 2>/dev/null || true
+            echo "pf rule updated: 127.0.0.1 → $EN0_IP"
+          else
+            echo "en0 IP not found, skipping pf update"
+          fi
+
       - name: Reload service
         run: launchctl kickstart -k gui/$(id -u)/com.weiai.authserver

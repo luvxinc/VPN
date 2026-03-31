@@ -181,7 +181,7 @@ func (h *APIHandler) vpnResponse(vlessUUID, accessToken, refreshToken string, po
 	}
 	if srv.WSFallbackDomain != "" {
 		vc.WSFallbackDomain = srv.WSFallbackDomain
-		vc.WSFallbackPort = srv.WSPort
+		vc.WSFallbackPort = srv.WSCDNPort // 443: Cloudflare external port (not sing-box's local 8888)
 		vc.WSFallbackPath = "/ws"
 	}
 	return models.ConnectResponse{

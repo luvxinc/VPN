@@ -24,7 +24,8 @@ type ServerConfig struct {
 	IP                  string `yaml:"ip"`
 	Port                int    `yaml:"port"`
 	AuthPort            int    `yaml:"auth_port"`
-	WSPort              int    `yaml:"ws_port"`
+	WSPort              int    `yaml:"ws_port"`              // sing-box local WS listen port (default 8888)
+	WSCDNPort           int    `yaml:"ws_cdn_port"`           // Cloudflare external port clients connect to (default 443)
 	WSFallbackDomain    string `yaml:"ws_fallback_domain"`
 	PublicKey           string `yaml:"public_key"`
 	PrivateKey          string `yaml:"private_key"`
@@ -118,6 +119,9 @@ func Load() (*Config, error) {
 	}
 	if cfg.Server.WSPort == 0 {
 		cfg.Server.WSPort = 8888
+	}
+	if cfg.Server.WSCDNPort == 0 {
+		cfg.Server.WSCDNPort = 443 // Cloudflare CDN always serves on 443
 	}
 	if cfg.Server.ProxyPort == 0 {
 		cfg.Server.ProxyPort = 8443
