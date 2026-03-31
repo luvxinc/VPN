@@ -9,6 +9,23 @@ Version format: `MAJOR.MINOR.PATCH`
 
 ---
 
+## [1.1.9] — 2026-03-31
+
+### Client (macOS)
+- **Fix: no internet after login (definitive fix)** — `v1.1.8` had two residual bugs:
+  1. Helper script version-blind: `isInstalled` only checked file presence, so the
+     new `weiai-helper.sh` was never deployed to existing users; old helper returned
+     immediately, bypassing the Clash API readiness polling entirely.
+     Now compares `UserDefaults["helperAppVersion"]` to `AppVersion.current` and
+     force-reinstalls on any version mismatch.
+  2. Clash API `/version` ≠ tunnel working: sing-box's control plane comes up in
+     ~100 ms, long before the VLESS Reality handshake completes (1–5 s). Added a
+     second phase (`waitForProxyReady`) that calls the Clash API **delay-test
+     endpoint** (`/proxies/{tag}/delay`) — traffic actually flows through the VLESS
+     outbound — before `isConnected` is set to `true`.
+
+---
+
 ## [1.1.8] — 2026-03-31
 
 ### Client (macOS)
