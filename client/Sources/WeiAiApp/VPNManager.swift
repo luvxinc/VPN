@@ -375,7 +375,7 @@ class VPNManager: ObservableObject {
                 ]
             ]
             let fallbackOutbound: [String: Any] = [
-                "type":      "fallback",
+                "type":      "urltest",
                 "tag":       "proxy",
                 "outbounds": ["reality-direct", "ws-cdn"],
                 "url":       "https://www.gstatic.com/generate_204",
