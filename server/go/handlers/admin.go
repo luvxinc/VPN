@@ -100,6 +100,21 @@ func (h *AdminHandler) Logout(c *fiber.Ctx) error {
 	return c.Redirect("/admin/login", fiber.StatusSeeOther)
 }
 
+func (h *AdminHandler) SetLang(c *fiber.Ctx) error {
+	lang := c.Query("lang", "en")
+	if lang != "zh" {
+		lang = "en"
+	}
+	c.Cookie(&fiber.Cookie{
+		Name:   "lang",
+		Value:  lang,
+		MaxAge: 365 * 24 * 3600,
+		Path:   "/",
+	})
+	referer := c.Get("Referer", "/admin/dashboard")
+	return c.Redirect(referer, fiber.StatusSeeOther)
+}
+
 // ── Dashboard ─────────────────────────────────────────────────────────────────
 
 func (h *AdminHandler) Dashboard(c *fiber.Ctx) error {

@@ -40,7 +40,16 @@
         {{t "nav.stats"}}
       </a>
     </nav>
-    <div class="p-3 border-t border-gray-800">
+    <div class="p-3 border-t border-gray-800 space-y-1">
+      <!-- Language toggle -->
+      <div class="flex items-center gap-1 px-4 py-1">
+        <svg class="w-3.5 h-3.5 text-gray-500 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 5h12M9 3v2m1.048 9.5A18.022 18.022 0 016.412 9m6.088 9h7M11 21l5-10 5 10M12.751 5C11.783 10.77 8.07 15.61 3 18.129"/></svg>
+        <a href="/admin/lang?lang=en" id="lang-en"
+           class="text-xs px-2 py-0.5 rounded transition-colors hover:text-white">EN</a>
+        <span class="text-gray-700 text-xs">|</span>
+        <a href="/admin/lang?lang=zh" id="lang-zh"
+           class="text-xs px-2 py-0.5 rounded transition-colors hover:text-white">中文</a>
+      </div>
       <form action="/admin/logout" method="post">
         <button type="submit" class="w-full flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium text-red-400 hover:text-red-300 hover:bg-red-900/30 transition-colors">
           <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/></svg>
@@ -48,6 +57,15 @@
         </button>
       </form>
     </div>
+    <script>
+    (function(){
+      var lang = (document.cookie.split(';').find(function(c){return c.trim().startsWith('lang=');}) || '').split('=')[1] || 'en';
+      var active = lang === 'zh' ? document.getElementById('lang-zh') : document.getElementById('lang-en');
+      var inactive = lang === 'zh' ? document.getElementById('lang-en') : document.getElementById('lang-zh');
+      if(active){ active.className += ' text-white font-semibold'; }
+      if(inactive){ inactive.className += ' text-gray-500'; }
+    })();
+    </script>
   </aside>
 
   <!-- Main content -->

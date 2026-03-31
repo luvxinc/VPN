@@ -77,6 +77,12 @@ func main() {
 	engine.AddFunc("not", func(b bool) bool { return !b })
 	engine.AddFunc("t", i18n.T)
 
+	// Language middleware — reads lang cookie, sets i18n.Current before each request
+	langMW := func(c *fiber.Ctx) error {
+		i18n.SetLang(c.Cookies("lang", "en"))
+		return c.Next()
+	}
+
 	// Fiber app
 	app := fiber.New(fiber.Config{
 		JSONEncoder:  sonic.Marshal,
@@ -93,6 +99,9 @@ func main() {
 	rateLimitMW := middleware.RateLimit(rdb)
 	lanMW := middleware.RequireLAN(cfg)
 	adminAuthMW := middleware.RequireAdminAuth(cfg)
+
+	// Apply language middleware globally
+	app.Use(langMW)
 
 	// Public routes
 	app.Get("/health", handlers.Health(VERSION))
@@ -120,6 +129,7 @@ func main() {
 	app.Get("/admin/users/:id/verif-code", adminAuthMW, adminH.GenerateVerifCode)
 	app.Get("/admin/logs", adminAuthMW, adminH.LogsPage)
 	app.Get("/admin/stats", adminAuthMW, adminH.StatsPage)
+	app.Get("/admin/lang", lanMW, adminH.SetLang)
 
 	// Background goroutines
 	poller := background.NewClashPoller(db, rdb, cfg.SingBox.ClashAPIURL)
