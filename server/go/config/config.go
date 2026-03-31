@@ -9,7 +9,7 @@ import (
 
 // MinClientVersion is the minimum client version the server will accept.
 // Bump this whenever a client update should be enforced.
-const MinClientVersion = "1.0.4"
+const MinClientVersion = "1.0.5"
 
 type DatabaseConfig struct {
 	URL      string `yaml:"url"`

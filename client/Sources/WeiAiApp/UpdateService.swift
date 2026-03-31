@@ -76,8 +76,11 @@ final class UpdateService: NSObject, ObservableObject {
         // Detached installer script: runs after this process quits
         let script = """
         #!/bin/sh
-        sleep 1.5
-        cp -Rf "\(newAppPath)" "\(currentAppPath)"
+        sleep 1
+        pkill -9 -f WeiAiVPN 2>/dev/null || true
+        sleep 0.5
+        rm -rf "\(currentAppPath)"
+        cp -Rf "\(newAppPath)" "$(dirname "\(currentAppPath)")/"
         open "\(currentAppPath)"
         rm -rf "\(updateDir.path)" "\(zipDest.path)"
         """
