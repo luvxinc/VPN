@@ -393,7 +393,7 @@ class VPNManager: ObservableObject {
             "dns": [
                 "servers": [
                     ["type": "udp", "tag": "remote", "server": "8.8.8.8",   "server_port": 53, "detour": finalOutbound],
-                    ["type": "udp", "tag": "local",  "server": "223.5.5.5", "server_port": 53, "detour": "direct"],
+                    ["type": "udp", "tag": "local",  "server": "223.5.5.5", "server_port": 53],
                 ],
                 "rules": [["ip_is_private": true, "server": "local"]],
                 "final": "remote",
