@@ -34,10 +34,23 @@ func isLAN(ip string, prefixes []string) bool {
 	return false
 }
 
+// realIP returns the true client IP. When the connection arrives from localhost
+// (i.e. via Cloudflare Tunnel), the CF-Connecting-IP header carries the real
+// external IP and takes precedence so that the LAN check is not bypassed.
+func realIP(c *fiber.Ctx) string {
+	ip := c.IP()
+	if strings.HasPrefix(ip, "127.") {
+		if cf := c.Get("CF-Connecting-IP"); cf != "" {
+			return cf
+		}
+	}
+	return ip
+}
+
 // RequireLAN rejects requests from non-LAN IP addresses.
 func RequireLAN(cfg *config.Config) fiber.Handler {
 	return func(c *fiber.Ctx) error {
-		if !isLAN(c.IP(), cfg.Admin.AllowedLANPrefixes) {
+		if !isLAN(realIP(c), cfg.Admin.AllowedLANPrefixes) {
 			return c.Status(fiber.StatusForbidden).JSON(fiber.Map{
 				"detail": "Admin access restricted to LAN only",
 			})
@@ -49,7 +62,7 @@ func RequireLAN(cfg *config.Config) fiber.Handler {
 // RequireAdminAuth enforces LAN access + valid admin JWT cookie.
 func RequireAdminAuth(cfg *config.Config) fiber.Handler {
 	return func(c *fiber.Ctx) error {
-		if !isLAN(c.IP(), cfg.Admin.AllowedLANPrefixes) {
+		if !isLAN(realIP(c), cfg.Admin.AllowedLANPrefixes) {
 			return c.Status(fiber.StatusForbidden).JSON(fiber.Map{
 				"detail": "Admin access restricted to LAN only",
 			})
