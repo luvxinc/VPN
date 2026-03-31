@@ -14,6 +14,17 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     // MARK: - Lifecycle
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        // macOS App Translocation: if the user ran us from Downloads, macOS puts the app
+        // in a read-only temp sandbox like /private/var/.../AppTranslocation/UUID/d/App.app
+        // Auto-updaters that used the old install script would have placed the new binary
+        // inside that sandbox, leaving the user's original Downloads copy untouched.
+        // Detect this and silently self-relocate to ~/Applications/ then relaunch,
+        // so the user always ends up with the app installed in a stable, persistent location.
+        if Bundle.main.bundlePath.contains("/AppTranslocation/") {
+            handleTranslocation()
+            return  // do not continue startup; we will relaunch
+        }
+
         NSApp.setActivationPolicy(.accessory)
 
         NotificationCenter.default.addObserver(
@@ -264,6 +275,77 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // Safety net: always release kill switch on any exit path.
         // Prevents network staying locked if the app crashes or is force-quit.
         KillSwitch.shared.deactivate()
+    }
+}
+
+// MARK: - Translocation self-repair
+
+extension AppDelegate {
+    /// Silently moves the app out of the macOS App Translocation sandbox into
+    /// ~/Applications/ and relaunches from there, so the installation persists.
+    private func handleTranslocation() {
+        let fm = FileManager.default
+        let appName = URL(fileURLWithPath: Bundle.main.bundlePath).lastPathComponent
+        let appsDir = fm.homeDirectoryForCurrentUser.appendingPathComponent("Applications")
+        let dest    = appsDir.appendingPathComponent(appName)
+
+        do {
+            try fm.createDirectory(at: appsDir, withIntermediateDirectories: true)
+            if fm.fileExists(atPath: dest.path) {
+                try fm.removeItem(at: dest)
+            }
+            try fm.copyItem(atPath: Bundle.main.bundlePath, toPath: dest.path)
+        } catch {
+            // If the copy fails for any reason, skip self-relocation and continue normally.
+            continueStartup()
+            return
+        }
+
+        // Strip quarantine so the relocated app doesn't trigger Gatekeeper again.
+        let xattr = Process()
+        xattr.executableURL = URL(fileURLWithPath: "/usr/bin/xattr")
+        xattr.arguments     = ["-dr", "com.apple.quarantine", dest.path]
+        try? xattr.run()
+        xattr.waitUntilExit()
+
+        // Relaunch from the stable path, then quit the translocated instance.
+        let ws = NSWorkspace.shared
+        let cfg = NSWorkspace.OpenConfiguration()
+        cfg.createsNewApplicationInstance = true
+        ws.openApplication(at: dest, configuration: cfg)
+        NSApp.terminate(nil)
+    }
+
+    private func continueStartup() {
+        NSApp.setActivationPolicy(.accessory)
+
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleKillSwitchActivated(_:)),
+            name: .vpnKillSwitchActivated,
+            object: nil
+        )
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleQuotaExceeded(_:)),
+            name: .vpnQuotaExceeded,
+            object: nil
+        )
+
+        var killSwitchHandled = false
+        KillSwitch.shared.startupCheck(
+            onReconnect: { [weak self] in
+                killSwitchHandled = true
+                self?.showConnectWindow()
+            },
+            onRestore: {
+                killSwitchHandled = true
+                NSApp.terminate(nil)
+            }
+        )
+        if !killSwitchHandled {
+            showConnectWindow()
+        }
     }
 }
 
