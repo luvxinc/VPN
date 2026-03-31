@@ -78,8 +78,8 @@ func (r *Redis) Client() rueidis.Client {
 	return r.client
 }
 
-// IncrRateLimit increments the rate counter for an IP. Sets TTL on first hit.
-// Returns the new count.
+// IncrRateLimit increments the failed-auth counter for an IP. Sets TTL on first hit.
+// Should only be called on credential failure (wrong password).
 func (r *Redis) IncrRateLimit(ctx context.Context, ip string) (int64, error) {
 	key := "rate:" + ip + ":auth"
 	resp := r.client.Do(ctx, r.client.B().Incr().Key(key).Build())
@@ -91,6 +91,16 @@ func (r *Redis) IncrRateLimit(ctx context.Context, ip string) (int64, error) {
 		r.client.Do(ctx, r.client.B().Expire().Key(key).Seconds(900).Build())
 	}
 	return count, nil
+}
+
+// GetRateLimit returns the current failed-auth count for an IP without incrementing.
+func (r *Redis) GetRateLimit(ctx context.Context, ip string) (int64, error) {
+	key := "rate:" + ip + ":auth"
+	resp := r.client.Do(ctx, r.client.B().Get().Key(key).Build())
+	if resp.Error() != nil {
+		return 0, nil // key doesn't exist → count is 0
+	}
+	return resp.AsInt64()
 }
 
 // GetActiveSession returns the raw JSON stored at active_session:{fingerprint}.

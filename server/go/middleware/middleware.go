@@ -9,16 +9,13 @@ import (
 	"github.com/luvxinc/vpn/server/store"
 )
 
-// RateLimit blocks IPs that exceed 5 requests per 15-minute window.
+// RateLimit blocks IPs that have exceeded 10 failed credential attempts per 15-minute window.
+// Only counts requests where the handler explicitly calls c.Locals("rate_limit_hit", true).
 func RateLimit(rdb *store.Redis) fiber.Handler {
 	return func(c *fiber.Ctx) error {
 		ip := c.IP()
-		count, err := rdb.IncrRateLimit(c.Context(), ip)
-		if err != nil {
-			// Redis failure → let through (fail open)
-			return c.Next()
-		}
-		if count > 5 {
+		count, err := rdb.GetRateLimit(c.Context(), ip)
+		if err == nil && count >= 10 {
 			return c.Status(fiber.StatusTooManyRequests).JSON(fiber.Map{
 				"detail": "Too many requests",
 			})

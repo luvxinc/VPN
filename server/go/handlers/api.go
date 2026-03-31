@@ -226,6 +226,7 @@ func (h *APIHandler) Connect(c *fiber.Ctx) error {
 	// Verify credentials
 	userID, hash, active, err := h.DB.GetUserByUsername(ctx, body.Username)
 	if err == pgx.ErrNoRows {
+		h.RDB.IncrRateLimit(ctx, c.IP())
 		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"detail": "Invalid credentials"})
 	}
 	if err != nil {
@@ -235,6 +236,7 @@ func (h *APIHandler) Connect(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{"detail": "Account disabled"})
 	}
 	if !auth.CheckPassword(body.Password, hash) {
+		h.RDB.IncrRateLimit(ctx, c.IP())
 		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"detail": "Invalid credentials"})
 	}
 
@@ -315,6 +317,7 @@ func (h *APIHandler) VerifyDevice(c *fiber.Ctx) error {
 	// Verify credentials
 	userID, hash, active, err := h.DB.GetUserByUsername(ctx, body.Username)
 	if err == pgx.ErrNoRows {
+		h.RDB.IncrRateLimit(ctx, c.IP())
 		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"detail": "Invalid credentials"})
 	}
 	if err != nil {
@@ -324,6 +327,7 @@ func (h *APIHandler) VerifyDevice(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{"detail": "Account disabled"})
 	}
 	if !auth.CheckPassword(body.Password, hash) {
+		h.RDB.IncrRateLimit(ctx, c.IP())
 		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"detail": "Invalid credentials"})
 	}
 
