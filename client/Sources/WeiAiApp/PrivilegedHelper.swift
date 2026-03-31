@@ -7,26 +7,37 @@ import Foundation
 ///   /etc/sudoers.d/weiai-vpn           — NOPASSWD rule so sudo needs no password
 ///
 /// After installation every privileged action uses:
-///   sudo /usr/local/bin/weiai-helper <action> <args...>
+///   sudo -n /usr/local/bin/weiai-helper <action> <args...>
 /// with no password prompt — ever again.
 enum PrivilegedHelper {
 
     static let helperPath  = "/usr/local/bin/weiai-helper"
     static let sudoersPath = "/etc/sudoers.d/weiai-vpn"
 
-    /// Returns true if the helper and sudoers rule are already installed.
+    /// True only when helper exists, sudoers rule exists, AND sudo actually works without a password.
     static var isInstalled: Bool {
-        FileManager.default.fileExists(atPath: helperPath) &&
-        FileManager.default.fileExists(atPath: sudoersPath)
+        guard FileManager.default.fileExists(atPath: helperPath),
+              FileManager.default.fileExists(atPath: sudoersPath) else { return false }
+        return _sudoWorks()
     }
 
-    /// Runs a privileged action without a password (requires prior installation).
-    /// Returns the termination status.
+    /// Runs `sudo -n helper ks-off` to confirm the NOPASSWD rule is active.
+    private static func _sudoWorks() -> Bool {
+        let t = Process()
+        t.executableURL  = URL(fileURLWithPath: "/usr/bin/sudo")
+        t.arguments      = ["-n", helperPath, "ks-off"]
+        t.standardOutput = Pipe()
+        t.standardError  = Pipe()
+        try? t.run(); t.waitUntilExit()
+        return t.terminationStatus == 0
+    }
+
+    /// Runs a privileged action without a password prompt (-n = non-interactive, fail if password needed).
     @discardableResult
     static func run(_ args: [String]) -> Int32 {
         let task = Process()
         task.executableURL  = URL(fileURLWithPath: "/usr/bin/sudo")
-        task.arguments      = [helperPath] + args
+        task.arguments      = ["-n", helperPath] + args
         task.standardOutput = Pipe()
         task.standardError  = Pipe()
         try? task.run()
@@ -34,17 +45,33 @@ enum PrivilegedHelper {
         return task.terminationStatus
     }
 
-    /// Installs the helper via a single osascript admin prompt.
+    /// Installs the helper via a single osascript admin prompt (one-time, lifetime).
     /// `bundleHelperPath` is the path to weiai-helper.sh inside the app bundle.
-    /// Returns an error message or nil on success.
+    /// Returns an error message on failure, or nil on success.
     static func install(bundleHelperPath: String) -> String? {
+        let tmpSudoers = "/tmp/weiai-vpn-sudoers-tmp"
+
+        // set -e: any failed command aborts the script → osascript returns non-zero → we detect it.
+        // mkdir -p: /usr/local/bin may not exist on a fresh macOS install.
+        // chown root:wheel: required for sudoers.d files to be accepted by sudo.
+        // visudo -c -f: validates syntax before writing to the real path.
         let installScript = """
         #!/bin/sh
-        cp '\(bundleHelperPath)' \(helperPath)
-        chmod 755 \(helperPath)
-        echo '%admin ALL=(root) NOPASSWD: \(helperPath)' > \(sudoersPath)
-        chmod 440 \(sudoersPath)
+        set -e
+        mkdir -p /usr/local/bin
+        cp '\(bundleHelperPath)' '\(helperPath)'
+        chmod 755 '\(helperPath)'
+        chown root:wheel '\(helperPath)'
+        echo '%admin ALL=(root) NOPASSWD: \(helperPath)' > '\(tmpSudoers)'
+        chmod 440 '\(tmpSudoers)'
+        chown root:wheel '\(tmpSudoers)'
+        /usr/sbin/visudo -c -f '\(tmpSudoers)'
+        cp '\(tmpSudoers)' '\(sudoersPath)'
+        chmod 440 '\(sudoersPath)'
+        chown root:wheel '\(sudoersPath)'
+        rm -f '\(tmpSudoers)'
         """
+
         let scriptPath = "/tmp/weiai_install_helper.sh"
         do {
             try installScript.write(toFile: scriptPath, atomically: true, encoding: .utf8)
@@ -66,6 +93,11 @@ enum PrivilegedHelper {
             return Bundle.main.localizedString(forKey: "error.authCancelled",
                                                value: "Authorization cancelled",
                                                table: nil)
+        }
+
+        // Confirm the sudoers rule is actually accepted — sudo must work without a password now.
+        guard _sudoWorks() else {
+            return "Helper installed but sudo verification failed — please quit and reopen the app"
         }
         return nil
     }

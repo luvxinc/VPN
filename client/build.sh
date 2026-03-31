@@ -4,7 +4,7 @@ set -e
 DISPLAY_NAME="为爱鼓掌"   # 显示名称（中文）
 EXEC_NAME="WeiAiVPN"       # 可执行文件名（必须 ASCII，否则 macOS 无法启动）
 BUNDLE_ID="com.weiai.vpn"
-VERSION="1.0.0"
+VERSION=$(grep 'static let current' Sources/WeiAiApp/Version.swift | grep -o '"[^"]*"' | tr -d '"')
 
 echo "=== 构建 ${DISPLAY_NAME}.app ==="
 
