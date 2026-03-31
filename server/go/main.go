@@ -127,6 +127,7 @@ func main() {
 	app.Get("/status", apiH.Status)
 
 	// Admin routes
+	app.Get("/admin", lanMW, func(c *fiber.Ctx) error { return c.Redirect("/admin/login") })
 	app.Get("/admin/login", lanMW, adminH.LoginPage)
 	app.Post("/admin/login", lanMW, adminH.Login)
 	app.Post("/admin/logout", adminH.Logout)
