@@ -32,6 +32,8 @@ func DownloadClient(zipPath string) fiber.Handler {
 				"detail": "Client package not available. Contact your administrator.",
 			})
 		}
+		c.Set("Cache-Control", "no-store, no-cache, must-revalidate")
+		c.Set("Pragma", "no-cache")
 		return c.Download(zipPath, "为爱鼓掌.zip")
 	}
 }

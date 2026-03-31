@@ -39,24 +39,23 @@ final class UpdateService: NSObject, ObservableObject {
     private func install(from tmp: URL) {
         state = .installing
 
+        let fm = FileManager.default
         let zipDest = URL(fileURLWithPath: "/tmp/weiai-update.zip")
         let updateDir = URL(fileURLWithPath: "/tmp/weiai-update")
 
-        // Move to final zip path (src is already stable; rename is near-instant).
+        // Move to stable zip path.
         if tmp.path != zipDest.path {
-            try? FileManager.default.removeItem(at: zipDest)
+            try? fm.removeItem(at: zipDest)
             do {
-                try FileManager.default.moveItem(at: tmp, to: zipDest)
+                try fm.moveItem(at: tmp, to: zipDest)
             } catch {
                 state = .failed(L("update.error.invalidPackage"))
                 return
             }
         }
 
-        // Clean previous extraction
-        try? FileManager.default.removeItem(at: updateDir)
-
-        // Unzip
+        // Clean previous extraction and unzip.
+        try? fm.removeItem(at: updateDir)
         let unzip = Process()
         unzip.executableURL = URL(fileURLWithPath: "/usr/bin/unzip")
         unzip.arguments = ["-o", zipDest.path, "-d", updateDir.path]
@@ -65,58 +64,72 @@ final class UpdateService: NSObject, ObservableObject {
         try? unzip.run()
         unzip.waitUntilExit()
 
-        // Find the .app inside the extracted folder
-        let contents = (try? FileManager.default.contentsOfDirectory(atPath: updateDir.path)) ?? []
+        // Find the .app inside the extracted folder (search one level deep).
+        let contents = (try? fm.contentsOfDirectory(atPath: updateDir.path)) ?? []
         guard let appName = contents.first(where: { $0.hasSuffix(".app") }) else {
             state = .failed(L("update.error.invalidPackage"))
             return
         }
+        let newAppURL = updateDir.appendingPathComponent(appName)
 
-        let newAppPath = updateDir.appendingPathComponent(appName).path
-        let currentAppPath = Bundle.main.bundlePath
+        // Choose install destination.
+        // Priority: wherever the current app lives (if writable and not translocated),
+        // otherwise ~/Applications/. This avoids AppTranslocation write failures and
+        // the dirname(translocated_path) bug that caused the infinite update loop.
+        let currentPath = Bundle.main.bundlePath
+        let isTranslocated = currentPath.contains("/AppTranslocation/")
+        let currentDir = URL(fileURLWithPath: currentPath).deletingLastPathComponent()
 
-        // macOS App Translocation: if launched from Downloads without being moved,
-        // macOS runs the app from a read-only temp path like
-        // /private/var/folders/.../AppTranslocation/UUID/d/为爱鼓掌.app
-        // Installing there leaves the original in Downloads untouched → infinite update loop.
-        // Fix: detect translocation and install to ~/Applications/ instead.
-        let installDir: String
-        if currentAppPath.contains("/AppTranslocation/") {
-            let appsDir = FileManager.default.homeDirectoryForCurrentUser
-                .appendingPathComponent("Applications")
-            try? FileManager.default.createDirectory(at: appsDir, withIntermediateDirectories: true)
-            installDir = appsDir.path
+        let installDir: URL
+        if !isTranslocated && fm.isWritableFile(atPath: currentDir.path) {
+            installDir = currentDir
         } else {
-            installDir = URL(fileURLWithPath: currentAppPath).deletingLastPathComponent().path
+            installDir = fm.homeDirectoryForCurrentUser.appendingPathComponent("Applications")
+            try? fm.createDirectory(at: installDir, withIntermediateDirectories: true)
         }
-        let finalAppPath = installDir + "/" + appName
+        let finalAppURL = installDir.appendingPathComponent(appName)
 
-        // Detached installer script: runs after this process quits
-        let script = """
-        #!/bin/sh
-        sleep 1
-        pkill -9 -f WeiAiVPN 2>/dev/null || true
-        sleep 0.5
-        rm -rf "\(finalAppPath)"
-        cp -Rf "\(newAppPath)" "\(installDir)/"
-        xattr -dr com.apple.quarantine "\(finalAppPath)" 2>/dev/null || true
-        open "\(finalAppPath)"
-        rm -rf "\(updateDir.path)" "\(zipDest.path)"
-        """
-        let scriptPath = "/tmp/weiai-install.sh"
+        // Copy new app directly from Swift — no shell script, no silent failures.
         do {
-            try script.write(toFile: scriptPath, atomically: true, encoding: .utf8)
-            try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: scriptPath)
+            if fm.fileExists(atPath: finalAppURL.path) {
+                try fm.removeItem(at: finalAppURL)
+            }
+            try fm.copyItem(at: newAppURL, to: finalAppURL)
         } catch {
             state = .failed(L("update.error.invalidPackage"))
             return
         }
 
-        let installer = Process()
-        installer.executableURL = URL(fileURLWithPath: "/bin/sh")
-        installer.arguments = [scriptPath]
-        try? installer.run()
-        // Do NOT waitUntilExit — the script runs detached after we quit
+        // Strip quarantine so macOS doesn't sandbox the newly installed app.
+        let xattr = Process()
+        xattr.executableURL = URL(fileURLWithPath: "/usr/bin/xattr")
+        xattr.arguments = ["-dr", "com.apple.quarantine", finalAppURL.path]
+        try? xattr.run()
+        xattr.waitUntilExit()
+
+        // Relaunch via a tiny detached script so the open happens after we quit.
+        let launchScript = """
+        #!/bin/sh
+        sleep 0.8
+        open "\(finalAppURL.path)"
+        rm -rf "\(updateDir.path)" "\(zipDest.path)" /tmp/weiai-install.sh
+        """
+        let scriptPath = "/tmp/weiai-install.sh"
+        do {
+            try launchScript.write(toFile: scriptPath, atomically: true, encoding: .utf8)
+            try fm.setAttributes([.posixPermissions: 0o755], ofItemAtPath: scriptPath)
+        } catch {
+            // Even if script write fails, the app is already copied — just open it directly.
+            NSWorkspace.shared.openApplication(at: finalAppURL,
+                                               configuration: NSWorkspace.OpenConfiguration())
+            NSApp.terminate(nil)
+            return
+        }
+
+        let launcher = Process()
+        launcher.executableURL = URL(fileURLWithPath: "/bin/sh")
+        launcher.arguments = [scriptPath]
+        try? launcher.run()
 
         NSApp.terminate(nil)
     }
