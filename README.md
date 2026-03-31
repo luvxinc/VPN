@@ -6,6 +6,7 @@ A self-hosted VPN system for macOS, built on [sing-box](https://github.com/Sager
 [macOS Client]  ──HTTPS/JWT──>  [Go Server :9443]  ──manages──>  [sing-box :443]
    sing-box (TUN)                 PostgreSQL + Redis               VLESS+Reality
    kill switch                    admin dashboard                  Clash API
+   auto-update                    per-user limits
 ```
 
 **Go server performance vs previous Python/FastAPI:**
@@ -23,12 +24,19 @@ A self-hosted VPN system for macOS, built on [sing-box](https://github.com/Sager
 
 - **Named users + device registration** — users need an admin-issued code to register a new Mac
 - **JWT authentication** — 15-minute access tokens, 24-hour refresh tokens, stored in macOS Keychain
-- **Admin dashboard** — create/disable users, kick sessions, generate registration codes, view logs and traffic (HTMX + Tailwind, LAN-only)
+- **Per-user speed limits** — configurable upload/download limits (Kbps) per user, enforced by sing-box
+- **Per-user traffic quotas** — daily/weekly/monthly data caps; auto-disconnects when exceeded, resets at next period
+- **Real-time policy push** — admin changes take effect within 30 seconds; client polls `/status` and shows updated limits immediately
+- **Admin dashboard** — create/disable users, kick sessions, generate registration codes, set speed limits and quotas, view logs and traffic (HTMX + Tailwind, LAN-only, all actions use HTML modals — no native browser dialogs)
 - **Domain access log** — every domain/IP a user visits is recorded via Clash API polling, aggregated by hour, retained 90 days
 - **Kill switch** — if VPN drops unexpectedly, all internet traffic is blocked until the user reconnects or explicitly restores
-- **Certificate pinning** — client rejects any TLS certificate that doesn't match the pinned SHA-256 fingerprint
-- **Client version gate** — server rejects outdated clients with HTTP 426 and serves the upgrade zip
+- **In-app auto-update** — when the server rejects an outdated client (HTTP 426), the app downloads the new zip, shows a progress bar, replaces itself, and relaunches — no browser required
+- **Certificate pinning** — client rejects any TLS certificate that doesn't match the pinned SHA-256 fingerprint (applied to both auth and update downloads)
+- **Client version gate** — server rejects outdated clients with HTTP 426 and serves the upgrade zip at `/download/client`
+- **Menu bar stats** — shows upload/download speed, quota usage (e.g. `345G/1024G`), time until next reset, and server latency (TCP ping)
+- **i18n** — client UI supports English and Simplified Chinese; follows system locale, falls back to English
 - **GeoIP** — login country and city recorded per session (MaxMind GeoLite2)
+- **CI/CD** — GitHub Actions builds both the Go server and the client zip on every push to `main`
 
 ---
 
@@ -76,7 +84,8 @@ This writes `certs/server.crt` and `certs/server.key`, then prints the SHA-256 f
 
 To print the fingerprint later:
 ```bash
-openssl x509 -in server/certs/server.crt -fingerprint -sha256 -noout
+openssl x509 -in server/certs/server.crt -fingerprint -sha256 -noout \
+  | sed 's/SHA256 Fingerprint=//' | tr -d ':'
 ```
 
 ### 3. Generate VLESS Reality key pair
@@ -156,7 +165,7 @@ Edit `server/config.yaml` — fill in your server IP, Reality keys, and generate
 htpasswd -bnBC 10 "" yourpassword | tr -d ':\n'
 ```
 
-Paste the output into `admin.password_hash` in config.yaml.
+Paste the output into `admin.password_hash` in config.yaml. Also set `client.client_zip_path` to the absolute path of your client zip (e.g. `/Users/you/Developer/VPN/client/dist/为爱鼓掌.zip`).
 
 **`config.yaml` is gitignored** — it contains your private keys and password hash. Never commit it.
 
@@ -210,7 +219,10 @@ The admin dashboard is available at `https://YOUR_SERVER_IP:9443/admin` — **LA
 | **Change password** | Takes effect on next login |
 | **Generate code** | 8-char code valid 15 minutes; give it to the user |
 | **Kick** | Force-disconnects the active session |
-| **Delete** | Removes user and all their data |
+| **Limits** | Set per-user upload/download speed cap (Kbps) and data quota (GB/daily/weekly/monthly) |
+| **Delete** | Removes user and all their data (confirmation modal) |
+
+Speed and quota badges are shown inline in the user list. Changes push to the client within 30 seconds via the `/status` polling endpoint.
 
 ### Dashboard (`/admin/dashboard`)
 
@@ -243,11 +255,7 @@ Edit `client/Resources/config.json`:
 }
 ```
 
-The fingerprint is 64 uppercase hex characters with no colons:
-```bash
-openssl x509 -in server/certs/server.crt -fingerprint -sha256 -noout \
-  | sed 's/SHA256 Fingerprint=//' | tr -d ':'
-```
+The fingerprint is 64 uppercase hex characters with no colons.
 
 **`config.json` is gitignored** — never commit it.
 
@@ -258,7 +266,7 @@ cd client
 bash build.sh
 ```
 
-Compiles the Swift app, bundles sing-box, signs it, and produces `dist/为爱鼓掌.zip`.
+Compiles the Swift app, bundles sing-box, signs it, copies `.lproj` localization folders, and produces `dist/为爱鼓掌.zip`.
 
 ### 3. Distribute
 
@@ -273,6 +281,23 @@ If sing-box crashes or exits unexpectedly, all internet traffic is blocked using
 - **On unexpected disconnect:** traffic routes to loopback; system notification + alert with **Reconnect** or **Quit and restore network**
 - **On quit with kill switch active:** confirmation dialog before restoring the network
 - **On app launch with kill switch leftover:** startup prompt to reconnect or restore
+
+---
+
+## Auto-Update
+
+When the server's `MIN_CLIENT_VERSION` is bumped above the client's version:
+
+1. Client receives HTTP 426 with a `download_url` pointing to `/download/client`
+2. App switches to an update view with a progress bar
+3. Client downloads the zip (with the same cert pinning as auth)
+4. Zip is extracted to `/tmp/weiai-update/`, a detached install script replaces the running bundle
+5. App quits and the new version launches automatically
+
+To force an update:
+1. Bump `MIN_CLIENT_VERSION` in `server/go/version.go`
+2. Build and place the new client zip (CI does this automatically on push)
+3. Rebuild and restart the auth server
 
 ---
 
@@ -310,13 +335,6 @@ const MIN_CLIENT_VERSION = "1.0.0"
 
 **Client version** is in `client/Sources/WeiAiApp/Version.swift`.
 
-When you need to force users to upgrade:
-1. Bump `MIN_CLIENT_VERSION` in `server/go/version.go`
-2. Build the new client zip and place it on the server
-3. Rebuild and restart the auth server (`go build ... && launchctl kickstart ...`)
-
-Old clients get HTTP 426 and see an in-app prompt to download the new version.
-
 ---
 
 ## Security Notes
@@ -324,7 +342,7 @@ Old clients get HTTP 426 and see an in-app prompt to download the new version.
 | Feature | Detail |
 |---------|--------|
 | **Transport** | VLESS + XTLS-Reality; looks like normal TLS to port 443 |
-| **Certificate pinning** | Client verifies server cert SHA-256 fingerprint; rejects MITM |
+| **Certificate pinning** | Client verifies server cert SHA-256 fingerprint on both auth and update downloads |
 | **JWT** | HS256, 15-minute expiry; refresh token in Redis with 24-hour TTL |
 | **Keychain storage** | Tokens, username, and password in macOS Keychain — not on disk |
 | **Rate limiting** | 5 auth attempts per 15 minutes per IP (Redis sliding window) |
@@ -342,17 +360,18 @@ Old clients get HTTP 426 and see an in-app prompt to download the new version.
 │   │   ├── main.go                  Entry point (Fiber v2, port 9443)
 │   │   ├── version.go               Server and min-client version constants
 │   │   ├── config/config.go         Config YAML loader
-│   │   ├── models/models.go         Shared data types
+│   │   ├── models/models.go         Shared data types (UserPolicy, PolicyStatus)
+│   │   ├── i18n/i18n.go             EN/中文 string maps, per-request switching
 │   │   ├── store/
-│   │   │   ├── db.go                PostgreSQL helpers (pgx/v5 + pgxpool)
-│   │   │   └── redis.go             Redis helpers (rueidis, auto-pipelining)
+│   │   │   ├── db.go                PostgreSQL helpers (pgx/v5, quota + limits queries)
+│   │   │   └── redis.go             Redis helpers (policy_changed flag, session store)
 │   │   ├── auth/
 │   │   │   ├── jwt.go               User + admin JWT (HS256)
 │   │   │   ├── bcrypt.go            Password hashing
 │   │   │   └── version.go           Client version check → HTTP 426
 │   │   ├── handlers/
-│   │   │   ├── api.go               /connect /disconnect /refresh /verify-device
-│   │   │   ├── admin.go             /admin/** (LAN only)
+│   │   │   ├── api.go               /connect /disconnect /refresh /verify-device /status
+│   │   │   ├── admin.go             /admin/** including /users/:id/limits
 │   │   │   └── health.go            /health /download/client
 │   │   ├── middleware/middleware.go  RateLimit, RequireLAN, RequireAdminAuth
 │   │   ├── singbox/singbox.go       Atomic sing-box config update
@@ -361,8 +380,10 @@ Old clients get HTTP 426 and see an in-app prompt to download the new version.
 │   │   │   ├── clash_poller.go      Polls Clash API every 10s → access_log
 │   │   │   └── log_manager.go       Nightly cleanup + traffic_daily aggregation
 │   │   ├── templates/               Go html/template files (HTMX + Tailwind CDN)
-│   │   └── tests/                   28 unit tests + 28 integration tests
-│   ├── db/schema.sql                PostgreSQL DDL
+│   │   └── tests/                   Unit + integration tests
+│   ├── db/
+│   │   ├── schema.sql               PostgreSQL DDL (all tables + columns)
+│   │   └── migration_001_user_limits.sql  Adds speed/quota columns to existing DBs
 │   ├── gen_certs.sh                 Self-signed TLS cert generator
 │   ├── config.example.yaml          Config template — safe to commit
 │   ├── sing-box-server.example.json sing-box config template
@@ -371,18 +392,23 @@ Old clients get HTTP 426 and see an in-app prompt to download the new version.
 │       └── com.sing-box.vpn.plist
 │
 └── client/
-    ├── build.sh                     Build → sign → zip → dist/
+    ├── build.sh                     Build → sign → copy lproj → zip → dist/
     ├── Package.swift
     ├── Sources/WeiAiApp/
-    │   ├── WeiAiApp.swift           App delegate, menu bar, kill switch startup check
-    │   ├── MenuView.swift           Login UI, device code form, update prompt
-    │   ├── VPNManager.swift         sing-box lifecycle, kill switch hooks
-    │   ├── AuthService.swift        HTTP auth, JWT, Keychain, cert pinning
+    │   ├── WeiAiApp.swift           App delegate, menu bar (SF Symbols, quota + latency)
+    │   ├── MenuView.swift           Login UI, device code form, update progress view
+    │   ├── VPNManager.swift         sing-box lifecycle, status polling, latency measurement
+    │   ├── UpdateService.swift      In-app update: download → extract → replace → relaunch
+    │   ├── AuthService.swift        HTTP auth, JWT, Keychain, cert pinning, /status fetch
     │   ├── KillSwitch.swift         Null-route kill switch via osascript
+    │   ├── NetworkMonitor.swift     Real-time upload/download speed (menu bar)
     │   ├── KeychainHelper.swift     SecKeychain CRUD
-    │   ├── Config.swift             Loads config.json from ~/.config or bundle
+    │   ├── Config.swift             Loads config.json from bundle
+    │   ├── L.swift                  Localizable string lookup helper
     │   └── Version.swift            Version, release date, author
     └── Resources/
+        ├── en.lproj/Localizable.strings
+        ├── zh-Hans.lproj/Localizable.strings
         ├── config.json              Runtime config (gitignored)
         └── config.example.json      Template — safe to commit
 ```
@@ -398,10 +424,11 @@ All endpoints are on `https://YOUR_SERVER:9443`.
 | Method | Path | Description |
 |--------|------|-------------|
 | GET | `/health` | Server status and version |
-| POST | `/connect` | Login + get VPN config |
+| POST | `/connect` | Login + get VPN config and user policy |
 | POST | `/verify-device` | Register device with code + get VPN config |
 | POST | `/disconnect` | End session |
 | POST | `/refresh` | Exchange refresh token for new access token |
+| GET | `/status?device_id=...` | Poll current policy (quota, speed limits, policy_changed flag) |
 | GET | `/download/client` | Download latest client zip |
 
 ### Admin (LAN only, cookie auth)
@@ -414,6 +441,7 @@ All endpoints are on `https://YOUR_SERVER:9443`.
 | POST | `/admin/users/:id/delete` | Delete user |
 | POST | `/admin/users/:id/password` | Change password |
 | POST | `/admin/users/:id/toggle` | Enable/disable user |
+| POST | `/admin/users/:id/limits` | Set speed limits and quota |
 | GET | `/admin/users/:id/verif-code` | Generate registration code |
 | POST | `/admin/users/:id/kick` | Force disconnect |
 | GET | `/admin/logs` | Access log browser |
@@ -424,7 +452,9 @@ All endpoints are on `https://YOUR_SERVER:9443`.
 ## Database Schema
 
 ```
-users            — VPN users (username, password_hash, is_active)
+users            — VPN users (username, password_hash, is_active,
+                   speed_limit_up_kbps, speed_limit_down_kbps,
+                   quota_bytes, quota_period)
 devices          — Registered Macs per user (device_fingerprint, device_name)
 sessions         — Connection records (vless_uuid, login_ip, country, upload/download)
 access_log       — Domain/IP per session, aggregated to 1-hour buckets
@@ -434,6 +464,18 @@ traffic_daily    — Daily upload/download totals per user
 ---
 
 ## Changelog
+
+### v1.1.0 — 2026-03-31
+
+- Per-user upload/download speed limits (Kbps), configurable from admin dashboard
+- Per-user traffic quotas (daily/weekly/monthly); auto-disconnect when exceeded, reset at next cycle
+- Client menu bar: quota usage badge (`345G/1024G`), reset countdown, server latency (TCP ping)
+- Real-time policy push: admin changes propagate to client within 30 seconds via Redis flag + `/status` polling
+- Smooth in-app auto-update: progress bar download, silent bundle replacement, automatic relaunch
+- Client i18n: English and Simplified Chinese, follows system locale
+- Admin dashboard: all confirmations use HTML modals (no native browser dialogs)
+- SF Symbols throughout macOS client (heart, bolt, chart, speedometer, power)
+- CI/CD: GitHub Actions builds client zip on Mac Mini on every push
 
 ### v1.0.0 — 2026-03-30
 
