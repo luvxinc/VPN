@@ -1,5 +1,4 @@
 import AppKit
-import CryptoKit
 import Foundation
 
 /// Handles in-app update: download with progress, extract, replace bundle, relaunch.
@@ -17,9 +16,10 @@ final class UpdateService: NSObject, ObservableObject {
 
     @Published var state: State = .idle
 
-    private let config = AppConfig.load()
-
-    private lazy var session: URLSession = {
+    // Download uses standard CA validation — the update URL goes through Cloudflare CDN,
+    // which serves its own certificate. Cert pinning is only needed for direct server auth.
+    // Standard CA validation — update URL is served via Cloudflare CDN, not the pinned server.
+    private lazy var downloadSession: URLSession = {
         URLSession(configuration: .default, delegate: self, delegateQueue: nil)
     }()
 
@@ -31,7 +31,7 @@ final class UpdateService: NSObject, ObservableObject {
             return
         }
         state = .downloading(0)
-        session.downloadTask(with: url).resume()
+        downloadSession.downloadTask(with: url).resume()
     }
 
     // MARK: - Install
@@ -128,37 +128,12 @@ extension UpdateService: URLSessionDownloadDelegate {
     }
 }
 
-// MARK: - Certificate Pinning (same logic as AuthService)
+// MARK: - URLSessionDelegate (standard CA validation for CDN downloads)
 
 extension UpdateService: URLSessionDelegate {
-
     nonisolated func urlSession(_ session: URLSession,
                                 didReceive challenge: URLAuthenticationChallenge,
                                 completionHandler: @escaping (URLSession.AuthChallengeDisposition, URLCredential?) -> Void) {
-        guard challenge.protectionSpace.authenticationMethod == NSURLAuthenticationMethodServerTrust,
-              let serverTrust = challenge.protectionSpace.serverTrust
-        else {
-            completionHandler(.cancelAuthenticationChallenge, nil)
-            return
-        }
-
-        let cert: SecCertificate?
-        if let chain = SecTrustCopyCertificateChain(serverTrust) as NSArray?,
-           let first = chain.firstObject {
-            cert = (first as! SecCertificate)
-        } else {
-            cert = nil
-        }
-
-        if let cert = cert {
-            let data = SecCertificateCopyData(cert) as Data
-            let hash = SHA256.hash(data: data)
-            let fp = hash.map { String(format: "%02X", $0) }.joined()
-            if fp == config.certFingerprint {
-                completionHandler(.useCredential, URLCredential(trust: serverTrust))
-                return
-            }
-        }
-        completionHandler(.cancelAuthenticationChallenge, nil)
+        completionHandler(.performDefaultHandling, nil)
     }
 }
