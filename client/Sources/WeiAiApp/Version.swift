@@ -5,7 +5,7 @@
 ///   MINOR — new feature, backward-compatible
 ///   PATCH — bug fix, no API change
 enum AppVersion {
-    static let current     = "1.1.4"
+    static let current     = "1.1.5"
     static let releaseDate = "2026-03-31"
     static let author      = "Aaron Tong"
 
