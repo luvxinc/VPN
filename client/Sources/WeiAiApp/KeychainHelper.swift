@@ -10,37 +10,39 @@ enum KeychainKey: String {
 
 struct KeychainHelper {
 
-    static func save(_ value: String, for key: KeychainKey) {
-        let data = Data(value.utf8)
-        let query: [String: Any] = [
-            kSecClass as String:       kSecClassGenericPassword,
-            kSecAttrAccount as String: key.rawValue,
-            kSecValueData as String:   data,
+    // Base attributes shared by all operations.
+    // kSecUseDataProtectionKeychain = true: stores in the data-protection keychain,
+    // which is NOT tied to the app's code-signing identity. This prevents macOS from
+    // showing "allow/deny" dialogs when the app is updated (ad-hoc re-signed).
+    private static func base(_ key: KeychainKey) -> [String: Any] {
+        [
+            kSecClass as String:                    kSecClassGenericPassword,
+            kSecAttrService as String:              "com.weiai.vpn",
+            kSecAttrAccount as String:              key.rawValue,
+            kSecUseDataProtectionKeychain as String: true,
         ]
-        SecItemDelete(query as CFDictionary)
-        SecItemAdd(query as CFDictionary, nil)
+    }
+
+    static func save(_ value: String, for key: KeychainKey) {
+        var q = base(key)
+        q[kSecValueData as String] = Data(value.utf8)
+        SecItemDelete(q as CFDictionary)
+        SecItemAdd(q as CFDictionary, nil)
     }
 
     static func load(_ key: KeychainKey) -> String? {
-        let query: [String: Any] = [
-            kSecClass as String:       kSecClassGenericPassword,
-            kSecAttrAccount as String: key.rawValue,
-            kSecReturnData as String:  true,
-            kSecMatchLimit as String:  kSecMatchLimitOne,
-        ]
+        var q = base(key)
+        q[kSecReturnData as String] = true
+        q[kSecMatchLimit as String] = kSecMatchLimitOne
         var result: AnyObject?
-        guard SecItemCopyMatching(query as CFDictionary, &result) == errSecSuccess,
+        guard SecItemCopyMatching(q as CFDictionary, &result) == errSecSuccess,
               let data = result as? Data
         else { return nil }
         return String(data: data, encoding: .utf8)
     }
 
     static func delete(_ key: KeychainKey) {
-        let query: [String: Any] = [
-            kSecClass as String:       kSecClassGenericPassword,
-            kSecAttrAccount as String: key.rawValue,
-        ]
-        SecItemDelete(query as CFDictionary)
+        SecItemDelete(base(key) as CFDictionary)
     }
 
     static func clearAll() {
