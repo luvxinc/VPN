@@ -3,11 +3,11 @@
 <table class="w-full text-sm">
   <thead>
     <tr class="text-gray-400 text-xs uppercase border-b border-gray-800">
-      <th class="px-4 py-2 text-left">用户</th>
-      <th class="px-4 py-2 text-left">IP / 位置</th>
-      <th class="px-4 py-2 text-left">连接时间</th>
-      <th class="px-4 py-2 text-right">上传</th>
-      <th class="px-4 py-2 text-right">下载</th>
+      <th class="px-4 py-2 text-left">{{t "tbl.user"}}</th>
+      <th class="px-4 py-2 text-left">{{t "tbl.ipLoc"}}</th>
+      <th class="px-4 py-2 text-left">{{t "tbl.connAt"}}</th>
+      <th class="px-4 py-2 text-right">{{t "tbl.upload"}}</th>
+      <th class="px-4 py-2 text-right">{{t "tbl.download"}}</th>
     </tr>
   </thead>
   <tbody class="divide-y divide-gray-800">
@@ -28,6 +28,6 @@
   </tbody>
 </table>
 {{else}}
-<div class="px-4 py-10 text-center text-gray-500">暂无在线用户</div>
+<div class="px-4 py-10 text-center text-gray-500">{{t "dash.noUsers"}}</div>
 {{end}}
 {{end}}

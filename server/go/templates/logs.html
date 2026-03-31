@@ -1,34 +1,34 @@
-{{define "title"}}访问日志 — 为爱鼓掌 VPN{{end}}
+{{define "title"}}{{t "logs.title"}} — {{t "app.name"}}{{end}}
 
 <div class="mb-6">
-  <h1 class="text-2xl font-bold text-white">访问日志</h1>
-  <p class="text-gray-400 text-sm mt-1">按用户和时间段查询访问记录（保留最近 90 天）</p>
+  <h1 class="text-2xl font-bold text-white">{{t "logs.title"}}</h1>
+  <p class="text-gray-400 text-sm mt-1">{{t "logs.subtitle"}}</p>
 </div>
 
 <!-- Filter form -->
 <form method="get" class="bg-gray-900 border border-gray-800 rounded-xl p-4 mb-6 flex flex-wrap gap-4 items-end">
   <div>
-    <label class="block text-xs text-gray-400 mb-1">用户</label>
+    <label class="block text-xs text-gray-400 mb-1">{{t "logs.filterUser"}}</label>
     <select name="user_id" class="bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:ring-2 focus:ring-red-500">
-      <option value="">— 选择用户 —</option>
+      <option value="">{{t "logs.selectUser"}}</option>
       {{range .Users}}
       <option value="{{.ID}}" {{if eq $.SelectedUser .ID.String}}selected{{end}}>{{.Username}}</option>
       {{end}}
     </select>
   </div>
   <div>
-    <label class="block text-xs text-gray-400 mb-1">开始日期</label>
+    <label class="block text-xs text-gray-400 mb-1">{{t "logs.filterFrom"}}</label>
     <input type="date" name="from" value="{{.DateFrom}}"
            class="bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:ring-2 focus:ring-red-500">
   </div>
   <div>
-    <label class="block text-xs text-gray-400 mb-1">结束日期</label>
+    <label class="block text-xs text-gray-400 mb-1">{{t "logs.filterTo"}}</label>
     <input type="date" name="to" value="{{.DateTo}}"
            class="bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:ring-2 focus:ring-red-500">
   </div>
   <button type="submit"
           class="bg-red-600 hover:bg-red-500 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors">
-    查询
+    {{t "logs.search"}}
   </button>
 </form>
 
@@ -36,16 +36,16 @@
 {{if .Logs}}
 <div class="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
   <div class="px-4 py-3 border-b border-gray-800 flex items-center justify-between">
-    <span class="text-sm text-gray-400">共 {{len .Logs}} 条记录（最多显示 1000 条）</span>
+    <span class="text-sm text-gray-400">{{len .Logs}} {{t "logs.count"}}</span>
   </div>
   <table class="w-full text-sm">
     <thead>
       <tr class="text-gray-400 text-xs uppercase border-b border-gray-800">
-        <th class="px-4 py-2 text-left">域名 / IP</th>
-        <th class="px-4 py-2 text-left">时间（小时）</th>
-        <th class="px-4 py-2 text-right">请求数</th>
-        <th class="px-4 py-2 text-right">上传</th>
-        <th class="px-4 py-2 text-right">下载</th>
+        <th class="px-4 py-2 text-left">{{t "logs.colHost"}}</th>
+        <th class="px-4 py-2 text-left">{{t "logs.colHour"}}</th>
+        <th class="px-4 py-2 text-right">{{t "logs.colReqs"}}</th>
+        <th class="px-4 py-2 text-right">{{t "logs.colUpload"}}</th>
+        <th class="px-4 py-2 text-right">{{t "logs.colDownload"}}</th>
       </tr>
     </thead>
     <tbody class="divide-y divide-gray-800">
@@ -63,10 +63,10 @@
 </div>
 {{else if .SelectedUser}}
 <div class="bg-gray-900 border border-gray-800 rounded-xl px-4 py-10 text-center text-gray-500">
-  该时间段内无访问记录
+  {{t "logs.noResults"}}
 </div>
 {{else}}
 <div class="bg-gray-900 border border-gray-800 rounded-xl px-4 py-10 text-center text-gray-500">
-  请选择用户后点击查询
+  {{t "logs.selectFirst"}}
 </div>
 {{end}}

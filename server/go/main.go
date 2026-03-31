@@ -14,6 +14,7 @@ import (
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/template/html/v2"
 	"github.com/luvxinc/vpn/server/background"
+	"github.com/luvxinc/vpn/server/i18n"
 	"github.com/luvxinc/vpn/server/config"
 	"github.com/luvxinc/vpn/server/geoip"
 	"github.com/luvxinc/vpn/server/handlers"
@@ -74,6 +75,7 @@ func main() {
 	engine.AddFunc("contains", strings.Contains)
 	engine.AddFunc("add", func(a, b int64) int64 { return a + b })
 	engine.AddFunc("not", func(b bool) bool { return !b })
+	engine.AddFunc("t", i18n.T)
 
 	// Fiber app
 	app := fiber.New(fiber.Config{

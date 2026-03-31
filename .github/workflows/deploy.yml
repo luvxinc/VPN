@@ -1,0 +1,22 @@
+name: Deploy to Mac Mini
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  deploy:
+    runs-on: self-hosted
+    steps:
+      - name: Pull latest code
+        working-directory: /Users/aaronsever/Developer/VPN
+        run: git pull origin main
+
+      - name: Build Go server
+        working-directory: /Users/aaronsever/Developer/VPN/server/go
+        run: |
+          export PATH=/opt/homebrew/bin:$PATH
+          go build -ldflags="-s -w" -o ../authserver .
+
+      - name: Reload service
+        run: launchctl kickstart -k gui/$(id -u)/com.weiai.authserver

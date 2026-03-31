@@ -1,23 +1,23 @@
-{{define "title"}}仪表板 — 为爱鼓掌 VPN{{end}}
+{{define "title"}}{{t "dash.title"}} — {{t "app.name"}}{{end}}
 
 <div class="mb-6">
-  <h1 class="text-2xl font-bold text-white">仪表板</h1>
-  <p class="text-gray-400 text-sm mt-1">实时连接状态</p>
+  <h1 class="text-2xl font-bold text-white">{{t "dash.title"}}</h1>
+  <p class="text-gray-400 text-sm mt-1">{{t "dash.subtitle"}}</p>
 </div>
 
 <!-- Stats cards -->
 <div class="grid grid-cols-3 gap-4 mb-8">
   <div class="bg-gray-900 border border-gray-800 rounded-xl p-4"
        hx-get="/admin/api/online-count" hx-trigger="every 5s" hx-swap="innerHTML">
-    <p class="text-sm text-gray-400">当前在线</p>
+    <p class="text-sm text-gray-400">{{t "dash.onlineNow"}}</p>
     <p class="text-3xl font-bold text-green-400 mt-1">{{len .OnlineSessions}}</p>
   </div>
   <div class="bg-gray-900 border border-gray-800 rounded-xl p-4">
-    <p class="text-sm text-gray-400">今日上传</p>
+    <p class="text-sm text-gray-400">{{t "dash.uploadToday"}}</p>
     <p class="text-3xl font-bold text-blue-400 mt-1">{{toGB .TotalUploadToday}} GB</p>
   </div>
   <div class="bg-gray-900 border border-gray-800 rounded-xl p-4">
-    <p class="text-sm text-gray-400">今日下载</p>
+    <p class="text-sm text-gray-400">{{t "dash.downloadToday"}}</p>
     <p class="text-3xl font-bold text-purple-400 mt-1">{{toGB .TotalDownloadToday}} GB</p>
   </div>
 </div>
@@ -25,8 +25,8 @@
 <!-- Online users table (auto-refresh every 5s via HTMX) -->
 <div class="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
   <div class="px-4 py-3 border-b border-gray-800 flex items-center justify-between">
-    <h2 class="font-semibold text-white">当前连接</h2>
-    <span class="text-xs text-gray-500">每 5 秒自动刷新</span>
+    <h2 class="font-semibold text-white">{{t "dash.activeConns"}}</h2>
+    <span class="text-xs text-gray-500">{{t "dash.autoRefresh"}}</span>
   </div>
   <div id="online-table"
        hx-get="/admin/api/online" hx-trigger="every 5s" hx-swap="innerHTML">
