@@ -132,10 +132,22 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     // MARK: - Menu bar
 
+    // Returns an SF Symbol image sized for menu items (16pt, template rendering).
+    private func menuIcon(_ systemName: String) -> NSImage? {
+        let img = NSImage(systemSymbolName: systemName, accessibilityDescription: nil)
+        img?.isTemplate = true
+        return img
+    }
+
     private func setupStatusItem() {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         guard let btn = statusItem?.button else { return }
-        btn.title = "❤"
+        // SF Symbol heart — template image adapts to light/dark menu bar
+        if let img = NSImage(systemSymbolName: "heart.fill", accessibilityDescription: "VPN") {
+            img.isTemplate = true
+            btn.image = img
+        }
+        btn.title = ""
         rebuildMenu()
     }
 
@@ -148,7 +160,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // Quota usage (e.g. "345G/1024G")
         let p = vpn.policy
         if let quotaBytes = p.quotaBytes {
-            let usedGB = Double(p.quotaUsedBytes) / 1_073_741_824
+            let usedGB  = Double(p.quotaUsedBytes) / 1_073_741_824
             let totalGB = Double(quotaBytes) / 1_073_741_824
             if totalGB >= 1 {
                 parts.append(String(format: "%.0fG/%.0fG", usedGB, totalGB))
@@ -156,7 +168,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 parts.append(String(format: "%.1fG/%.1fG", usedGB, totalGB))
             }
         }
-        btn.title = parts.isEmpty ? "❤" : "❤ " + parts.joined(separator: "  ")
+        // Title is text only; image (heart) is always visible on the left
+        btn.title = parts.isEmpty ? "" : " " + parts.joined(separator: "  ")
 
         // Rebuild menu to show fresh latency / quota info
         rebuildMenu()
@@ -168,7 +181,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         // Latency
         if let ms = vpn.latencyMs {
-            let lat = NSMenuItem(title: "⚡ \(ms) ms", action: nil, keyEquivalent: "")
+            let lat = NSMenuItem(title: "\(ms) ms", action: nil, keyEquivalent: "")
+            lat.image = menuIcon("bolt.fill")
             lat.isEnabled = false
             menu.addItem(lat)
         }
@@ -178,43 +192,46 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         if let quotaBytes = p.quotaBytes, let period = p.quotaPeriod {
             let usedGB  = String(format: "%.1f", Double(p.quotaUsedBytes) / 1_073_741_824)
             let totalGB = String(format: "%.1f", Double(quotaBytes) / 1_073_741_824)
-            let qi = NSMenuItem(title: "📊 \(usedGB)G / \(totalGB)G (\(period))", action: nil, keyEquivalent: "")
+            let qi = NSMenuItem(title: "\(usedGB)G / \(totalGB)G  (\(period))", action: nil, keyEquivalent: "")
+            qi.image = menuIcon("chart.bar.fill")
             qi.isEnabled = false
             menu.addItem(qi)
             if let resets = p.quotaResetsAt {
                 let f = RelativeDateTimeFormatter()
                 f.unitsStyle = .abbreviated
-                let ri = NSMenuItem(title: "🔄 " + f.localizedString(for: resets, relativeTo: Date()), action: nil, keyEquivalent: "")
+                let ri = NSMenuItem(title: f.localizedString(for: resets, relativeTo: Date()), action: nil, keyEquivalent: "")
+                ri.image = menuIcon("arrow.clockwise")
                 ri.isEnabled = false
                 menu.addItem(ri)
             }
             menu.addItem(.separator())
-        } else if latencyMs != nil {
+        } else if vpn.latencyMs != nil {
             menu.addItem(.separator())
         }
 
         // Speed limits
         if p.speedLimitUpKbps != nil || p.speedLimitDownKbps != nil {
             var speedParts: [String] = []
-            if let up   = p.speedLimitUpKbps   { speedParts.append("↑\(up/1000)M") }
-            if let down = p.speedLimitDownKbps { speedParts.append("↓\(down/1000)M") }
-            let si = NSMenuItem(title: "🚦 " + speedParts.joined(separator: "  "), action: nil, keyEquivalent: "")
+            if let up   = p.speedLimitUpKbps   { speedParts.append("\u{2191}\(up/1000)M") }  // ↑
+            if let down = p.speedLimitDownKbps { speedParts.append("\u{2193}\(down/1000)M") } // ↓
+            let si = NSMenuItem(title: speedParts.joined(separator: "  "), action: nil, keyEquivalent: "")
+            si.image = menuIcon("speedometer")
             si.isEnabled = false
             menu.addItem(si)
             menu.addItem(.separator())
         }
 
         let di = NSMenuItem(title: L("menu.disconnect"), action: #selector(disconnectVPN), keyEquivalent: "")
+        di.image = menuIcon("xmark.circle")
         di.target = self
         menu.addItem(di)
         menu.addItem(.separator())
-        let qi2 = NSMenuItem(title: L("menu.quit"), action: #selector(quitApp), keyEquivalent: "")
+        let qi2 = NSMenuItem(title: L("menu.quit"), action: #selector(quitApp), keyEquivalent: "q")
+        qi2.image = menuIcon("power")
         qi2.target = self
         menu.addItem(qi2)
         item.menu = menu
     }
-
-    private var latencyMs: Int? { vpn.latencyMs }
 
     // MARK: - Disconnect / Quit
 
