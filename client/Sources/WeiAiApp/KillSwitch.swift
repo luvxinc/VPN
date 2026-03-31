@@ -39,6 +39,12 @@ final class KillSwitch {
     // MARK: - Startup check
 
     func startupCheck(onReconnect: @escaping () -> Void, onRestore: @escaping () -> Void) {
+        // If the state file exists but routes were already cleared (e.g. after reboot),
+        // the kill switch isn't actually blocking anything — silently clean up the stale file.
+        if FileManager.default.fileExists(atPath: statePath) && !routeExists() {
+            try? FileManager.default.removeItem(atPath: statePath)
+            return
+        }
         guard isActive else { return }
         showKillSwitchAlert(
             title:          L("ks.startup.title"),

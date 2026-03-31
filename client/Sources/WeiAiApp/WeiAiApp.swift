@@ -257,6 +257,14 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         if vpn.isConnected { vpn.disconnect() }
         NSApp.terminate(nil)
     }
+
+    // MARK: - Terminate
+
+    func applicationWillTerminate(_ notification: Notification) {
+        // Safety net: always release kill switch on any exit path.
+        // Prevents network staying locked if the app crashes or is force-quit.
+        KillSwitch.shared.deactivate()
+    }
 }
 
 // MARK: - NSWindowDelegate
@@ -264,6 +272,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 extension AppDelegate: NSWindowDelegate {
     func windowWillClose(_ notification: Notification) {
         guard !vpn.isConnected && !vpn.isConnecting else { return }
+        // Always release kill switch before quitting — user closing the window
+        // must never leave their network locked.
+        KillSwitch.shared.deactivate()
         NSApp.terminate(nil)
     }
 }
