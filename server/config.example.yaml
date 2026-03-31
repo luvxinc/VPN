@@ -29,7 +29,8 @@ admin:
     - "172.19."
     - "172.20."
   username: "admin"
-  # Generate with: python3 -c "import bcrypt; print(bcrypt.hashpw(b'yourpassword', bcrypt.gensalt()).decode())"
+  # Generate with: htpasswd -bnBC 10 "" yourpassword | tr -d ':\n'
+  # or:            go run golang.org/x/crypto/bcrypt@latest yourpassword
   password_hash: ""
 
 certs:
