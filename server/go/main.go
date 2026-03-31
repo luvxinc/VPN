@@ -149,8 +149,10 @@ func main() {
 	// Background goroutines
 	poller := background.NewClashPoller(db, rdb, cfg.SingBox.ClashAPIURL)
 	logMgr := background.NewLogManager(db, cfg.Log.RetentionDays, cfg.Log.MaxDomainsPerUserPerDay)
+	sessionCleaner := background.NewSessionCleaner(db)
 	go poller.Run(ctx)
 	go logMgr.Run(ctx)
+	go sessionCleaner.Run(ctx)
 
 	// Graceful shutdown
 	quit := make(chan os.Signal, 1)

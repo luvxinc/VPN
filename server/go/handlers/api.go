@@ -489,6 +489,11 @@ func (h *APIHandler) Status(c *fiber.Ctx) error {
 	exceeded := limits.QuotaBytes != nil && used >= *limits.QuotaBytes
 	changed := h.RDB.GetAndDeletePolicyChanged(ctx, info.UserID)
 
+	// Heartbeat: update last_heartbeat_at so the admin panel shows real-time online status.
+	if sessionID, err2 := uuid.Parse(info.SessionID); err2 == nil {
+		h.DB.UpdateSessionHeartbeat(ctx, sessionID)
+	}
+
 	return c.JSON(models.PolicyStatus{
 		SpeedLimitUpKbps:   limits.SpeedLimitUpKbps,
 		SpeedLimitDownKbps: limits.SpeedLimitDownKbps,

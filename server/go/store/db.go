@@ -177,13 +177,33 @@ func (d *DB) DeactivateUserSessions(ctx context.Context, userID uuid.UUID) error
 	return err
 }
 
-// GetOnlineSessions returns all currently active sessions with user info.
+// UpdateSessionHeartbeat refreshes last_heartbeat_at for an active session.
+// Called by the /status endpoint so stale sessions can be detected.
+func (d *DB) UpdateSessionHeartbeat(ctx context.Context, sessionID uuid.UUID) {
+	_, _ = d.pool.Exec(ctx,
+		"UPDATE sessions SET last_heartbeat_at=NOW() WHERE id=$1 AND is_active=true",
+		sessionID,
+	)
+}
+
+// DeactivateStaleSessions marks as inactive any active session whose heartbeat
+// has not been updated in the last 5 minutes.
+func (d *DB) DeactivateStaleSessions(ctx context.Context) error {
+	_, err := d.pool.Exec(ctx,
+		`UPDATE sessions SET is_active=false, disconnected_at=NOW()
+		 WHERE is_active=true
+		   AND last_heartbeat_at < NOW() - INTERVAL '5 minutes'`)
+	return err
+}
+
+// GetOnlineSessions returns sessions that are active AND have a recent heartbeat.
 func (d *DB) GetOnlineSessions(ctx context.Context) ([]models.OnlineSession, error) {
 	rows, err := d.pool.Query(ctx,
 		`SELECT s.id, u.username, s.login_ip::text, s.login_country, s.login_city,
 		        s.connected_at, s.upload_bytes, s.download_bytes
 		 FROM sessions s JOIN users u ON s.user_id = u.id
 		 WHERE s.is_active = true
+		   AND s.last_heartbeat_at > NOW() - INTERVAL '3 minutes'
 		 ORDER BY s.connected_at DESC`,
 	)
 	if err != nil {
@@ -212,11 +232,12 @@ func (d *DB) GetTodayTrafficTotals(ctx context.Context) (upload, download int64,
 	return
 }
 
-// CountOnlineSessions returns how many sessions are currently active.
+// CountOnlineSessions returns active sessions with a recent heartbeat.
 func (d *DB) CountOnlineSessions(ctx context.Context) (int64, error) {
 	var n int64
 	err := d.pool.QueryRow(ctx,
-		"SELECT COUNT(*) FROM sessions WHERE is_active = true",
+		`SELECT COUNT(*) FROM sessions WHERE is_active = true
+		   AND last_heartbeat_at > NOW() - INTERVAL '3 minutes'`,
 	).Scan(&n)
 	return n, err
 }
@@ -226,7 +247,8 @@ func (d *DB) GetUsers(ctx context.Context) ([]models.UserRow, error) {
 	rows, err := d.pool.Query(ctx,
 		`SELECT u.id, u.username, u.is_active, u.created_at,
 		        d.last_seen, d.device_name,
-		        (SELECT COUNT(*) FROM sessions s2 WHERE s2.user_id=u.id AND s2.is_active=true) AS online,
+		        (SELECT COUNT(*) FROM sessions s2 WHERE s2.user_id=u.id AND s2.is_active=true
+		           AND s2.last_heartbeat_at > NOW() - INTERVAL '3 minutes') AS online,
 		        u.speed_limit_up_kbps, u.speed_limit_down_kbps, u.quota_bytes, u.quota_period
 		 FROM users u
 		 LEFT JOIN devices d ON d.user_id=u.id AND d.is_active=true

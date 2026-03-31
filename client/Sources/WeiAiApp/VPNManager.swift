@@ -179,6 +179,21 @@ class VPNManager: ObservableObject {
 
             Thread.sleep(forTimeInterval: 2.0)
 
+            // Verify sing-box is actually running before declaring connected.
+            // If it failed to start, read the log and surface a real error
+            // instead of entering a phantom "connected → disconnected" loop.
+            if !self.isSingBoxRunning() {
+                let log = (try? String(contentsOfFile: "/tmp/weiai_sb.log", encoding: .utf8))?
+                    .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                let detail = log.isEmpty ? "" : "\n\(log.prefix(300))"
+                AuthService.shared.disconnect()
+                Task { @MainActor in
+                    self.isConnecting = false
+                    completion("VPN 启动失败\(detail)")
+                }
+                return
+            }
+
             Task { @MainActor in
                 self.isConnected  = true
                 self.isConnecting = false
@@ -204,10 +219,23 @@ class VPNManager: ObservableObject {
                 guard let self = self, self.isConnected else { return }
                 if !self.isSingBoxRunning() {
                     let serverIP = self.currentServerIP ?? ""
+                    let pidPath  = self.pidPath
+                    let wsIPs    = self.currentWSIPs
                     self.isConnected  = false
                     self.isConnecting = false
                     self.monitorTimer?.invalidate()
                     self.monitorTimer = nil
+                    self.statusTimer?.invalidate()
+                    self.statusTimer = nil
+                    self.latencyTimer?.invalidate()
+                    self.latencyTimer = nil
+                    // Clean up routes and server session so reconnect starts fresh.
+                    AuthService.shared.disconnect()
+                    DispatchQueue.global(qos: .utility).async {
+                        VPNManager.stopSingBoxStatic(pidPath: pidPath,
+                                                     serverIP: serverIP,
+                                                     wsIPs: wsIPs)
+                    }
                     KillSwitch.shared.activate(serverIP: serverIP)
                     NotificationCenter.default.post(
                         name: .vpnKillSwitchActivated,
