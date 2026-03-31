@@ -17,23 +17,11 @@ final class KillSwitch {
     }
 
     func activate(serverIP: String) {
-        let script = """
-        #!/bin/sh
-        /sbin/route add -net 0.0.0.0/1 127.0.0.1 2>/dev/null || true
-        /sbin/route add -net 128.0.0.0/1 127.0.0.1 2>/dev/null || true
-        touch \(statePath)
-        """
-        runAsAdmin(script: script, label: "weiai_ks_on")
+        PrivilegedHelper.run(["ks-on"])
     }
 
     func deactivate() {
-        let script = """
-        #!/bin/sh
-        /sbin/route delete -net 0.0.0.0/1 127.0.0.1 2>/dev/null || true
-        /sbin/route delete -net 128.0.0.0/1 127.0.0.1 2>/dev/null || true
-        rm -f \(statePath)
-        """
-        runAsAdmin(script: script, label: "weiai_ks_off")
+        PrivilegedHelper.run(["ks-off"])
     }
 
     // MARK: - Startup check
@@ -99,23 +87,6 @@ final class KillSwitch {
         p.standardError  = Pipe()
         try? p.run(); p.waitUntilExit()
         return p.terminationStatus == 0
-    }
-
-    private func runAsAdmin(script: String, label: String) {
-        let scriptPath = "/tmp/\(label).sh"
-        do {
-            try script.write(toFile: scriptPath, atomically: true, encoding: .utf8)
-            try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: scriptPath)
-        } catch { return }
-
-        let appleScript = "do shell script \"\(scriptPath)\" with administrator privileges"
-        let task = Process()
-        task.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
-        task.arguments     = ["-e", appleScript]
-        task.standardOutput = Pipe()
-        task.standardError  = Pipe()
-        try? task.run()
-        task.waitUntilExit()
     }
 
     private func showKillSwitchAlert(title: String, message: String,

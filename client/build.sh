@@ -42,8 +42,10 @@ elif [ -f "Resources/config.example.json" ]; then
     echo "警告：未找到 Resources/config.json，使用示例配置（请在 Resources/ 创建真实的 config.json）"
     cp "Resources/config.example.json" "${APP_DIR}/Contents/Resources/config.json"
 fi
+cp "Resources/weiai-helper.sh" "${APP_DIR}/Contents/Resources/weiai-helper.sh"
 chmod +x "${APP_DIR}/Contents/MacOS/${EXEC_NAME}"
 chmod +x "${APP_DIR}/Contents/Resources/sing-box"
+chmod +x "${APP_DIR}/Contents/Resources/weiai-helper.sh"
 
 # 4b. 复制本地化文件
 for lproj in en.lproj zh-Hans.lproj; do

@@ -151,51 +151,25 @@ class VPNManager: ObservableObject {
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             guard let self = self else { return }
 
-            let launchScript = "/tmp/weiai_launch.sh"
-            // Add bypass routes for direct server IP and any WS CDN IPs
-            // so sing-box's own connections don't loop through the TUN interface.
-            var routeLines = "/sbin/route add -host \(serverIP) \(gateway) 2>/dev/null || true"
-            for ip in wsIPs {
-                routeLines += "\n/sbin/route add -host \(ip) \(gateway) 2>/dev/null || true"
-            }
-            let scriptContent = """
-            #!/bin/sh
-            /sbin/route delete -net 0.0.0.0/1 127.0.0.1 2>/dev/null || true
-            /sbin/route delete -net 128.0.0.0/1 127.0.0.1 2>/dev/null || true
-            rm -f /tmp/weiai_ks_active
-            \(routeLines)
-            "\(sbPath)" run -c "\(cfgPath)" > /tmp/weiai_sb.log 2>&1 &
-            echo $! > "\(pidPath)"
-            """
-            do {
-                try scriptContent.write(toFile: launchScript, atomically: true, encoding: .utf8)
-                try FileManager.default.setAttributes(
-                    [.posixPermissions: 0o755], ofItemAtPath: launchScript)
-            } catch {
-                Task { @MainActor in
-                    self.isConnecting = false
-                    completion("\(L("error.launchScriptFailed")): \(error.localizedDescription)")
+            // First-time setup: install privileged helper so we never need osascript again.
+            if !PrivilegedHelper.isInstalled {
+                let bundleHelper = Bundle.main.path(forResource: "weiai-helper", ofType: "sh")
+                    ?? (Bundle.main.bundlePath + "/Contents/Resources/weiai-helper.sh")
+                if let errMsg = PrivilegedHelper.install(bundleHelperPath: bundleHelper) {
+                    Task { @MainActor in
+                        self.isConnecting = false
+                        completion(errMsg)
+                    }
+                    return
                 }
-                return
             }
 
-            let appleScript = "do shell script \"\(launchScript)\" with administrator privileges"
-            let task = Process()
-            task.executableURL  = URL(fileURLWithPath: "/usr/bin/osascript")
-            task.arguments      = ["-e", appleScript]
-            task.standardOutput = Pipe()
-            task.standardError  = Pipe()
+            // Build args: launch <sb> <cfg> <pid> <gateway> <server> [ws_ips...]
+            var args = ["launch", sbPath, cfgPath, pidPath, gateway, serverIP]
+            args += wsIPs
 
-            do { try task.run(); task.waitUntilExit() }
-            catch {
-                Task { @MainActor in
-                    self.isConnecting = false
-                    completion("\(L("error.osascriptFailed")): \(error.localizedDescription)")
-                }
-                return
-            }
-
-            guard task.terminationStatus == 0 else {
+            let status = PrivilegedHelper.run(args)
+            guard status == 0 else {
                 Task { @MainActor in
                     self.isConnecting = false
                     completion(L("error.authCancelled"))
@@ -217,30 +191,9 @@ class VPNManager: ObservableObject {
     // MARK: - Stop sing-box
 
     nonisolated private static func stopSingBoxStatic(pidPath: String, serverIP: String, wsIPs: [String] = []) {
-        let stopScript = "/tmp/weiai_stop.sh"
-        var routeDeletes = "/sbin/route delete -host \(serverIP) 2>/dev/null || true"
-        for ip in wsIPs {
-            routeDeletes += "\n/sbin/route delete -host \(ip) 2>/dev/null || true"
-        }
-        let content = """
-        #!/bin/sh
-        PID=$(cat "\(pidPath)" 2>/dev/null)
-        [ -n "$PID" ] && kill "$PID" 2>/dev/null
-        \(routeDeletes)
-        rm -f "\(pidPath)"
-        """
-        try? content.write(toFile: stopScript, atomically: true, encoding: .utf8)
-        try? FileManager.default.setAttributes(
-            [.posixPermissions: 0o755], ofItemAtPath: stopScript)
-
-        let appleScript = "do shell script \"\(stopScript)\" with administrator privileges"
-        let task = Process()
-        task.executableURL  = URL(fileURLWithPath: "/usr/bin/osascript")
-        task.arguments      = ["-e", appleScript]
-        task.standardOutput = Pipe()
-        task.standardError  = Pipe()
-        try? task.run()
-        task.waitUntilExit()
+        var args = ["stop", pidPath, serverIP]
+        args += wsIPs
+        PrivilegedHelper.run(args)
     }
 
     // MARK: - Monitoring
