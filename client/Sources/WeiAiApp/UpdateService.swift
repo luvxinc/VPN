@@ -75,15 +75,32 @@ final class UpdateService: NSObject, ObservableObject {
         let newAppPath = updateDir.appendingPathComponent(appName).path
         let currentAppPath = Bundle.main.bundlePath
 
+        // macOS App Translocation: if launched from Downloads without being moved,
+        // macOS runs the app from a read-only temp path like
+        // /private/var/folders/.../AppTranslocation/UUID/d/为爱鼓掌.app
+        // Installing there leaves the original in Downloads untouched → infinite update loop.
+        // Fix: detect translocation and install to ~/Applications/ instead.
+        let installDir: String
+        if currentAppPath.contains("/AppTranslocation/") {
+            let appsDir = FileManager.default.homeDirectoryForCurrentUser
+                .appendingPathComponent("Applications")
+            try? FileManager.default.createDirectory(at: appsDir, withIntermediateDirectories: true)
+            installDir = appsDir.path
+        } else {
+            installDir = URL(fileURLWithPath: currentAppPath).deletingLastPathComponent().path
+        }
+        let finalAppPath = installDir + "/" + appName
+
         // Detached installer script: runs after this process quits
         let script = """
         #!/bin/sh
         sleep 1
         pkill -9 -f WeiAiVPN 2>/dev/null || true
         sleep 0.5
-        rm -rf "\(currentAppPath)"
-        cp -Rf "\(newAppPath)" "$(dirname "\(currentAppPath)")/"
-        open "\(currentAppPath)"
+        rm -rf "\(finalAppPath)"
+        cp -Rf "\(newAppPath)" "\(installDir)/"
+        xattr -dr com.apple.quarantine "\(finalAppPath)" 2>/dev/null || true
+        open "\(finalAppPath)"
         rm -rf "\(updateDir.path)" "\(zipDest.path)"
         """
         let scriptPath = "/tmp/weiai-install.sh"
