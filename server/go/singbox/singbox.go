@@ -45,14 +45,39 @@ func UpdateUUID(configPath, newUUID string) error {
 		return fmt.Errorf("singbox: inbounds array is empty")
 	}
 
-	users := []map[string]string{
-		{"uuid": newUUID, "flow": "xtls-rprx-vision"},
+	// Update every VLESS inbound. Reality inbounds need xtls-rprx-vision;
+	// WebSocket inbounds must not set flow (incompatible).
+	for i := range inbounds {
+		var tag string
+		_ = json.Unmarshal(inbounds[i]["type"], &tag)
+		if tag != "vless" {
+			continue
+		}
+		flow := ""
+		if tlsRaw, ok := inbounds[i]["tls"]; ok {
+			var tls map[string]json.RawMessage
+			if json.Unmarshal(tlsRaw, &tls) == nil {
+				if realityRaw, ok := tls["reality"]; ok {
+					var reality struct {
+						Enabled bool `json:"enabled"`
+					}
+					if json.Unmarshal(realityRaw, &reality) == nil && reality.Enabled {
+						flow = "xtls-rprx-vision"
+					}
+				}
+			}
+		}
+		type User struct {
+			UUID string `json:"uuid"`
+			Flow string `json:"flow,omitempty"`
+		}
+		users := []User{{UUID: newUUID, Flow: flow}}
+		usersJSON, err := json.Marshal(users)
+		if err != nil {
+			return fmt.Errorf("singbox: marshal users: %w", err)
+		}
+		inbounds[i]["users"] = json.RawMessage(usersJSON)
 	}
-	usersJSON, err := json.Marshal(users)
-	if err != nil {
-		return fmt.Errorf("singbox: marshal users: %w", err)
-	}
-	inbounds[0]["users"] = json.RawMessage(usersJSON)
 
 	newInboundsJSON, err := json.Marshal(inbounds)
 	if err != nil {

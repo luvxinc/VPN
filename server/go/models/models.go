@@ -23,6 +23,12 @@ type VlessConfig struct {
 	PublicKey  string `json:"public_key"`
 	ShortID    string `json:"short_id"`
 	ServerName string `json:"server_name"`
+	// WSFallback is set when a CDN-fronted WebSocket fallback is configured.
+	// Clients should use this as a secondary outbound (urltest) when the direct
+	// VLESS+Reality connection fails or is blocked.
+	WSFallbackDomain string `json:"ws_fallback_domain,omitempty"`
+	WSFallbackPort   int    `json:"ws_fallback_port,omitempty"`
+	WSFallbackPath   string `json:"ws_fallback_path,omitempty"`
 }
 
 // UserPolicy contains the per-user speed limit and quota settings

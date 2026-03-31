@@ -3,6 +3,9 @@ import Foundation
 struct AppConfig {
     let authURL: String
     let certFingerprint: String
+    /// Optional Cloudflare CDN URL for auth requests (no cert pinning, standard TLS).
+    /// When set, the client tries this first; falls back to authURL on failure.
+    let cdnAuthURL: String?
 
     /// Load order:
     /// 1. ~/.config/weiai/config.json  (user override)
@@ -34,15 +37,17 @@ struct AppConfig {
               let authURL = json["auth_url"], !authURL.isEmpty,
               let fingerprint = json["cert_fingerprint"], !fingerprint.isEmpty
         else { return nil }
-        return AppConfig(authURL: authURL, certFingerprint: fingerprint)
+        let cdnAuthURL = json["cdn_auth_url"].flatMap { $0.isEmpty ? nil : $0 }
+        return AppConfig(authURL: authURL, certFingerprint: fingerprint, cdnAuthURL: cdnAuthURL)
     }
 
     private static func devDefaults() -> AppConfig {
         // Fallback when no config.json is found.
         // Copy client/Resources/config.example.json → client/Resources/config.json and fill in your values.
         AppConfig(
-            authURL: "https://YOUR_SERVER_IP:9443",
-            certFingerprint: "YOUR_CERT_SHA256_FINGERPRINT"
+            authURL: "https://YOUR_SERVER_IP",
+            certFingerprint: "YOUR_CERT_SHA256_FINGERPRINT",
+            cdnAuthURL: nil
         )
     }
 }

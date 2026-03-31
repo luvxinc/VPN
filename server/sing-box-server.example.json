@@ -6,7 +6,7 @@
   "inbounds": [
     {
       "type": "vless",
-      "tag": "vless-in",
+      "tag": "vless-reality-in",
       "listen": "0.0.0.0",
       "listen_port": 8443,
       "users": [
@@ -29,6 +29,21 @@
             "YOUR_SHORT_ID"
           ]
         }
+      }
+    },
+    {
+      "type": "vless",
+      "tag": "vless-ws-in",
+      "listen": "0.0.0.0",
+      "listen_port": 8888,
+      "users": [
+        {
+          "uuid": "PLACEHOLDER"
+        }
+      ],
+      "transport": {
+        "type": "ws",
+        "path": "/ws"
       }
     }
   ],

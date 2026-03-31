@@ -32,6 +32,7 @@ class VPNManager: ObservableObject {
     private var latencyTimer: Timer?
     private var currentServerIP: String?
     private var currentServerPort: Int = 443
+    private var currentWSIPs: [String] = []
 
     private var singBoxPath: String {
         let bundlePath = Bundle.main.bundlePath + "/Contents/Resources/sing-box"
@@ -114,12 +115,14 @@ class VPNManager: ObservableObject {
         isConnecting = false
         policy = .unlimited
         latencyMs = nil
-        let pidPath   = self.pidPath
-        let serverIP  = self.currentServerIP ?? ""
+        let pidPath  = self.pidPath
+        let serverIP = self.currentServerIP ?? ""
+        let wsIPs    = self.currentWSIPs
         currentServerIP = nil
+        currentWSIPs = []
         KillSwitch.shared.deactivate()
         DispatchQueue.global(qos: .userInitiated).async {
-            VPNManager.stopSingBoxStatic(pidPath: pidPath, serverIP: serverIP)
+            VPNManager.stopSingBoxStatic(pidPath: pidPath, serverIP: serverIP, wsIPs: wsIPs)
         }
     }
 
@@ -136,13 +139,28 @@ class VPNManager: ObservableObject {
         let serverIP = config.server
         let gateway  = VPNManager.defaultGateway() ?? "192.168.86.1"
 
+        // Resolve WS domain IPs so we can add bypass routes for them.
+        let wsIPs: [String]
+        if let wsServer = config.wsServer {
+            wsIPs = VPNManager.resolveHostIPv4(wsServer)
+        } else {
+            wsIPs = []
+        }
+        currentWSIPs = wsIPs
+
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             guard let self = self else { return }
 
             let launchScript = "/tmp/weiai_launch.sh"
+            // Add bypass routes for direct server IP and any WS CDN IPs
+            // so sing-box's own connections don't loop through the TUN interface.
+            var routeLines = "/sbin/route add -host \(serverIP) \(gateway) 2>/dev/null || true"
+            for ip in wsIPs {
+                routeLines += "\n/sbin/route add -host \(ip) \(gateway) 2>/dev/null || true"
+            }
             let scriptContent = """
             #!/bin/sh
-            /sbin/route add -host \(serverIP) \(gateway) 2>/dev/null || true
+            \(routeLines)
             "\(sbPath)" run -c "\(cfgPath)" > /tmp/weiai_sb.log 2>&1 &
             echo $! > "\(pidPath)"
             """
@@ -195,13 +213,17 @@ class VPNManager: ObservableObject {
 
     // MARK: - Stop sing-box
 
-    nonisolated private static func stopSingBoxStatic(pidPath: String, serverIP: String) {
+    nonisolated private static func stopSingBoxStatic(pidPath: String, serverIP: String, wsIPs: [String] = []) {
         let stopScript = "/tmp/weiai_stop.sh"
+        var routeDeletes = "/sbin/route delete -host \(serverIP) 2>/dev/null || true"
+        for ip in wsIPs {
+            routeDeletes += "\n/sbin/route delete -host \(ip) 2>/dev/null || true"
+        }
         let content = """
         #!/bin/sh
         PID=$(cat "\(pidPath)" 2>/dev/null)
         [ -n "$PID" ] && kill "$PID" 2>/dev/null
-        /sbin/route delete -host \(serverIP) 2>/dev/null || true
+        \(routeDeletes)
         rm -f "\(pidPath)"
         """
         try? content.write(toFile: stopScript, atomically: true, encoding: .utf8)
@@ -326,6 +348,63 @@ class VPNManager: ObservableObject {
     // MARK: - Client config
 
     private func writeClientConfig(_ vpn: VPNConfig) {
+        let realityOutbound: [String: Any] = [
+            "type":        "vless",
+            "tag":         "reality-direct",
+            "server":      vpn.server,
+            "server_port": vpn.port,
+            "uuid":        vpn.uuid,
+            "flow":        "xtls-rprx-vision",
+            "tls": [
+                "enabled":     true,
+                "server_name": vpn.serverName,
+                "utls": ["enabled": true, "fingerprint": "chrome"],
+                "reality": [
+                    "enabled":    true,
+                    "public_key": vpn.publicKey,
+                    "short_id":   vpn.shortId,
+                ]
+            ]
+        ]
+
+        var outbounds: [[String: Any]] = [realityOutbound]
+        var finalOutbound = "reality-direct"
+
+        // If a CDN WebSocket fallback is configured, add a second outbound and use
+        // urltest to automatically select the fastest working path.
+        if let wsServer = vpn.wsServer,
+           let wsPort   = vpn.wsPort,
+           let wsPath   = vpn.wsPath {
+            let wsOutbound: [String: Any] = [
+                "type":        "vless",
+                "tag":         "ws-cdn",
+                "server":      wsServer,
+                "server_port": wsPort,
+                "uuid":        vpn.uuid,
+                "tls": [
+                    "enabled":     true,
+                    "server_name": wsServer,
+                ],
+                "transport": [
+                    "type": "ws",
+                    "path": wsPath,
+                ]
+            ]
+            let urltestOutbound: [String: Any] = [
+                "type":      "urltest",
+                "tag":       "proxy",
+                "outbounds": ["reality-direct", "ws-cdn"],
+                "url":       "https://www.gstatic.com/generate_204",
+                "interval":  "3m",
+                "tolerance": 50,
+            ]
+            outbounds.append(wsOutbound)
+            outbounds.append(urltestOutbound)
+            finalOutbound = "proxy"
+        }
+
+        outbounds.append(["type": "direct", "tag": "direct"])
+
         let config: [String: Any] = [
             "log": ["level": "warn"],
             "inbounds": [[
@@ -335,33 +414,38 @@ class VPNManager: ObservableObject {
                 "auto_route":   true,
                 "strict_route": true,
             ]],
-            "outbounds": [
-                [
-                    "type":        "vless",
-                    "tag":         "proxy",
-                    "server":      vpn.server,
-                    "server_port": vpn.port,
-                    "uuid":        vpn.uuid,
-                    "flow":        "xtls-rprx-vision",
-                    "tls": [
-                        "enabled":     true,
-                        "server_name": vpn.serverName,
-                        "utls": ["enabled": true, "fingerprint": "chrome"],
-                        "reality": [
-                            "enabled":    true,
-                            "public_key": vpn.publicKey,
-                            "short_id":   vpn.shortId,
-                        ]
-                    ]
-                ],
-                ["type": "direct", "tag": "direct"],
-            ],
+            "outbounds": outbounds,
             "route": [
                 "rules": [["action": "sniff"]],
-                "final": "proxy",
+                "final": finalOutbound,
             ]
         ]
         let data = try? JSONSerialization.data(withJSONObject: config, options: .prettyPrinted)
         try? data?.write(to: URL(fileURLWithPath: configPath))
+    }
+
+    // MARK: - DNS helper
+
+    /// Resolves a hostname to its IPv4 addresses using getaddrinfo.
+    /// Used to add bypass routes for CDN IPs before sing-box starts.
+    nonisolated static func resolveHostIPv4(_ hostname: String) -> [String] {
+        var hints = addrinfo()
+        hints.ai_family = AF_INET
+        hints.ai_socktype = SOCK_STREAM
+        var result: UnsafeMutablePointer<addrinfo>? = nil
+        guard getaddrinfo(hostname, nil, &hints, &result) == 0, let head = result else { return [] }
+        defer { freeaddrinfo(head) }
+        var ips: [String] = []
+        var ptr: UnsafeMutablePointer<addrinfo>? = head
+        while let node = ptr {
+            var host = [CChar](repeating: 0, count: Int(NI_MAXHOST))
+            if getnameinfo(node.pointee.ai_addr, node.pointee.ai_addrlen,
+                           &host, socklen_t(host.count), nil, 0, NI_NUMERICHOST) == 0 {
+                let ip = String(cString: host)
+                if !ips.contains(ip) { ips.append(ip) }
+            }
+            ptr = node.pointee.ai_next
+        }
+        return ips
     }
 }

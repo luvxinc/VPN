@@ -11,6 +11,10 @@ struct VPNConfig {
     let publicKey: String
     let shortId: String
     let serverName: String
+    // CDN WebSocket fallback (nil = not configured)
+    let wsServer: String?
+    let wsPort: Int?
+    let wsPath: String?
 }
 
 struct UserPolicy {
@@ -95,9 +99,17 @@ final class AuthService: NSObject {
 
     private let config = AppConfig.load()
 
-    private lazy var session: URLSession = {
+    // Session with cert pinning — used for direct IP connections.
+    private lazy var pinnedSession: URLSession = {
         URLSession(configuration: .default, delegate: self, delegateQueue: nil)
     }()
+
+    // Session with standard CA validation — used for CDN connections (Cloudflare cert).
+    private lazy var cdnSession: URLSession = {
+        URLSession(configuration: .default, delegate: nil, delegateQueue: nil)
+    }()
+
+    private var session: URLSession { pinnedSession }
 
     // MARK: - Device identity
 
@@ -258,6 +270,31 @@ final class AuthService: NSObject {
 
     private func post(path: String, body: [String: Any],
                       completion: @escaping ConnectCompletion) {
+        // If a CDN URL is configured, try it first (standard CA-validated TLS).
+        // Fall back to direct URL with cert pinning when CDN is unavailable.
+        if let cdnBase = config.cdnAuthURL, let cdnURL = URL(string: "\(cdnBase)\(path)") {
+            var cdnReq = URLRequest(url: cdnURL, timeoutInterval: 12)
+            cdnReq.httpMethod = "POST"
+            cdnReq.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            cdnReq.setValue(AppVersion.headerValue, forHTTPHeaderField: "X-Client-Version")
+            cdnReq.httpBody = try? JSONSerialization.data(withJSONObject: body)
+            cdnSession.dataTask(with: cdnReq) { [weak self] data, response, error in
+                guard let self = self else { return }
+                // If CDN succeeds (any HTTP response), handle it — even error codes are valid responses.
+                if error == nil, response != nil {
+                    self.handlePostResponse(data: data, response: response, error: nil, completion: completion)
+                } else {
+                    // CDN unreachable — fall back to direct connection with cert pinning.
+                    self.postDirect(path: path, body: body, completion: completion)
+                }
+            }.resume()
+        } else {
+            postDirect(path: path, body: body, completion: completion)
+        }
+    }
+
+    private func postDirect(path: String, body: [String: Any],
+                            completion: @escaping ConnectCompletion) {
         guard let url = URL(string: "\(config.authURL)\(path)") else { return }
 
         var req = URLRequest(url: url, timeoutInterval: 15)
@@ -266,84 +303,95 @@ final class AuthService: NSObject {
         req.setValue(AppVersion.headerValue, forHTTPHeaderField: "X-Client-Version")
         req.httpBody = try? JSONSerialization.data(withJSONObject: body)
 
-        session.dataTask(with: req) { data, response, error in
-            if let error = error {
-                let nsErr = error as NSError
-                if nsErr.code == NSURLErrorCannotConnectToHost ||
-                   nsErr.code == NSURLErrorCannotFindHost ||
-                   nsErr.code == NSURLErrorTimedOut {
-                    completion(.failure(.serverOffline))
-                } else {
-                    completion(.failure(.networkError(error)))
-                }
-                return
-            }
-            guard let http = response as? HTTPURLResponse else {
-                completion(.failure(.unexpectedResponse))
-                return
-            }
-
-            // 426 Upgrade Required
-            if http.statusCode == 426,
-               let data = data,
-               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-               let detail = json["detail"] as? [String: Any],
-               (detail["error"] as? String) == "client_version_outdated" {
-                let url = (detail["download_url"] as? String) ?? ""
-                completion(.failure(.updateRequired(downloadURL: url)))
-                return
-            }
-
-            // 403 device_not_registered
-            if http.statusCode == 403,
-               let data = data,
-               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-               let detail = json["detail"] as? [String: Any],
-               (detail["error"] as? String) == "device_not_registered" {
-                completion(.failure(.deviceNotRegistered))
-                return
-            }
-
-            // 403 quota_exceeded
-            if http.statusCode == 403,
-               let data = data,
-               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-               let detail = json["detail"] as? [String: Any],
-               (detail["error"] as? String) == "quota_exceeded" {
-                let resetsAt = Self.parseDate(detail["quota_resets_at"] as? String)
-                completion(.failure(.quotaExceeded(resetsAt: resetsAt)))
-                return
-            }
-
-            guard http.statusCode == 200, let data = data else {
-                let msg = String(data: data ?? Data(), encoding: .utf8) ?? ""
-                completion(.failure(.serverError(http.statusCode, msg)))
-                return
-            }
-
-            guard let json  = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                  let at    = json["access_token"]  as? String,
-                  let rt    = json["refresh_token"] as? String,
-                  let vc    = json["vless_config"]  as? [String: Any],
-                  let uuid  = vc["uuid"]        as? String,
-                  let srv   = vc["server"]      as? String,
-                  let port  = vc["port"]        as? Int,
-                  let pub   = vc["public_key"]  as? String,
-                  let sid   = vc["short_id"]    as? String,
-                  let sni   = vc["server_name"] as? String
-            else {
-                completion(.failure(.invalidResponse))
-                return
-            }
-
-            KeychainHelper.save(at, for: .accessToken)
-            KeychainHelper.save(rt, for: .refreshToken)
-
-            let policy = Self.parsePolicy(json)
-            completion(.success((VPNConfig(uuid: uuid, server: srv, port: port,
-                                           publicKey: pub, shortId: sid, serverName: sni),
-                                  policy)))
+        pinnedSession.dataTask(with: req) { [weak self] data, response, error in
+            self?.handlePostResponse(data: data, response: response, error: error, completion: completion)
         }.resume()
+    }
+
+    // Shared response parser for both CDN and direct paths.
+    private func handlePostResponse(data: Data?, response: URLResponse?, error: Error?,
+                                    completion: @escaping ConnectCompletion) {
+        if let error = error {
+            let nsErr = error as NSError
+            if nsErr.code == NSURLErrorCannotConnectToHost ||
+               nsErr.code == NSURLErrorCannotFindHost ||
+               nsErr.code == NSURLErrorTimedOut {
+                completion(.failure(.serverOffline))
+            } else {
+                completion(.failure(.networkError(error)))
+            }
+            return
+        }
+        guard let http = response as? HTTPURLResponse else {
+            completion(.failure(.unexpectedResponse))
+            return
+        }
+
+        // 426 Upgrade Required
+        if http.statusCode == 426,
+           let data = data,
+           let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+           let detail = json["detail"] as? [String: Any],
+           (detail["error"] as? String) == "client_version_outdated" {
+            let url = (detail["download_url"] as? String) ?? ""
+            completion(.failure(.updateRequired(downloadURL: url)))
+            return
+        }
+
+        // 403 device_not_registered
+        if http.statusCode == 403,
+           let data = data,
+           let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+           let detail = json["detail"] as? [String: Any],
+           (detail["error"] as? String) == "device_not_registered" {
+            completion(.failure(.deviceNotRegistered))
+            return
+        }
+
+        // 403 quota_exceeded
+        if http.statusCode == 403,
+           let data = data,
+           let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+           let detail = json["detail"] as? [String: Any],
+           (detail["error"] as? String) == "quota_exceeded" {
+            let resetsAt = Self.parseDate(detail["quota_resets_at"] as? String)
+            completion(.failure(.quotaExceeded(resetsAt: resetsAt)))
+            return
+        }
+
+        guard http.statusCode == 200, let data = data else {
+            let msg = String(data: data ?? Data(), encoding: .utf8) ?? ""
+            completion(.failure(.serverError(http.statusCode, msg)))
+            return
+        }
+
+        guard let json  = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let at    = json["access_token"]  as? String,
+              let rt    = json["refresh_token"] as? String,
+              let vc    = json["vless_config"]  as? [String: Any],
+              let uuid  = vc["uuid"]        as? String,
+              let srv   = vc["server"]      as? String,
+              let port  = vc["port"]        as? Int,
+              let pub   = vc["public_key"]  as? String,
+              let sid   = vc["short_id"]    as? String,
+              let sni   = vc["server_name"] as? String
+        else {
+            completion(.failure(.invalidResponse))
+            return
+        }
+
+        KeychainHelper.save(at, for: .accessToken)
+        KeychainHelper.save(rt, for: .refreshToken)
+
+        let policy = Self.parsePolicy(json)
+        let vpnConfig = VPNConfig(
+            uuid: uuid, server: srv, port: port,
+            publicKey: pub, shortId: sid, serverName: sni,
+            wsServer: vc["ws_fallback_domain"] as? String,
+            wsPort:   vc["ws_fallback_port"]   as? Int,
+            wsPath:   vc["ws_fallback_path"]   as? String
+        )
+        completion(.success((vpnConfig, policy)))
     }
 }
 

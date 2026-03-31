@@ -169,18 +169,24 @@ func (h *APIHandler) buildPolicy(ctx context.Context, userID uuid.UUID) models.U
 // vpnResponse builds the ConnectResponse struct.
 func (h *APIHandler) vpnResponse(vlessUUID, accessToken, refreshToken string, policy models.UserPolicy) models.ConnectResponse {
 	srv := h.Cfg.Server
+	vc := models.VlessConfig{
+		UUID:       vlessUUID,
+		Server:     srv.IP,
+		Port:       srv.Port,
+		PublicKey:  srv.PublicKey,
+		ShortID:    srv.ShortID,
+		ServerName: srv.ServerName,
+	}
+	if srv.WSFallbackDomain != "" {
+		vc.WSFallbackDomain = srv.WSFallbackDomain
+		vc.WSFallbackPort = srv.WSPort
+		vc.WSFallbackPath = "/ws"
+	}
 	return models.ConnectResponse{
 		AccessToken:  accessToken,
 		RefreshToken: refreshToken,
-		VlessConfig: models.VlessConfig{
-			UUID:       vlessUUID,
-			Server:     srv.IP,
-			Port:       srv.Port,
-			PublicKey:  srv.PublicKey,
-			ShortID:    srv.ShortID,
-			ServerName: srv.ServerName,
-		},
-		Policy: policy,
+		VlessConfig:  vc,
+		Policy:       policy,
 	}
 }
 

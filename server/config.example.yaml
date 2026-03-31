@@ -7,8 +7,10 @@ redis:
 
 server:
   ip: "YOUR_SERVER_IP"
-  port: 8443          # sing-box VLESS+Reality listen port (router: WAN:8443 → server:8443)
-  auth_port: 443      # auth HTTP server listen port (router: WAN:443 → server:443)
+  port: 8443                   # sing-box VLESS+Reality listen port (router: WAN:8443 → server:8443)
+  auth_port: 443               # auth HTTP server listen port (router: WAN:443 → server:443)
+  ws_port: 8888                # sing-box VLESS+WS listen port (CDN fallback)
+  ws_fallback_domain: ""       # CDN domain for WS fallback, e.g. "vpn.yourdomain.com" (leave empty to disable)
   public_key: "YOUR_REALITY_PUBLIC_KEY"
   private_key: "YOUR_REALITY_PRIVATE_KEY"
   short_id: "YOUR_SHORT_ID"
