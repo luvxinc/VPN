@@ -75,6 +75,12 @@ var En = map[string]string{
 	"modal.limits.save":        "Save",
 	"modal.limits.unlimited":   "Unlimited",
 
+	// ── Delete user modal ────────────────────────────────────────────────────
+	"modal.delete.title":   "Delete User",
+	"modal.delete.message": "Are you sure you want to delete this user? This cannot be undone.",
+	"modal.delete.cancel":  "Cancel",
+	"modal.delete.confirm": "Delete",
+
 	// ── New user modal ────────────────────────────────────────────────────────
 	"modal.newUser.title":    "New User",
 	"modal.newUser.username": "Username",
@@ -207,6 +213,12 @@ var Zh = map[string]string{
 	"modal.limits.cancel":      "取消",
 	"modal.limits.save":        "保存",
 	"modal.limits.unlimited":   "无限制",
+
+	// ── Delete user modal ────────────────────────────────────────────────────
+	"modal.delete.title":   "删除用户",
+	"modal.delete.message": "确定要删除此用户吗？此操作无法撤销。",
+	"modal.delete.cancel":  "取消",
+	"modal.delete.confirm": "删除",
 
 	// ── New user modal ────────────────────────────────────────────────────────
 	"modal.newUser.title":    "新建用户",
