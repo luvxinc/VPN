@@ -24,5 +24,12 @@ jobs:
           export PATH=/opt/homebrew/bin:$PATH
           bash build.sh
 
+      - name: Sync min_version to config.yaml
+        working-directory: /Users/aaronsever/Developer/VPN
+        run: |
+          MIN=$(grep 'MinClientVersion' server/go/config/config.go | grep -o '"[^"]*"' | tr -d '"')
+          sed -i '' "s/min_version: \".*\"/min_version: \"$MIN\"/" server/config.yaml
+          echo "min_version synced to $MIN"
+
       - name: Reload service
         run: launchctl kickstart -k gui/$(id -u)/com.weiai.authserver
