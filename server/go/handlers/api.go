@@ -25,11 +25,12 @@ type APIHandler struct {
 	Cfg *config.Config
 }
 
-// checkClientVersion returns 426 if the client version is below the minimum.
-func (h *APIHandler) checkClientVersion(c *fiber.Ctx) error {
+// checkClientVersion writes a 426 response and returns true if the client is outdated.
+// Callers must return immediately when this returns true.
+func (h *APIHandler) checkClientVersion(c *fiber.Ctx) (outdated bool, err error) {
 	raw := c.Get("X-Client-Version")
 	if raw == "" {
-		return nil // no header → old client, let through
+		return false, nil // no header → old client, let through
 	}
 	verStr := raw
 	if idx := strings.LastIndex(raw, "/"); idx >= 0 {
@@ -38,16 +39,17 @@ func (h *APIHandler) checkClientVersion(c *fiber.Ctx) error {
 	clientVer := auth.ParseVersion(verStr)
 	minVer := auth.ParseVersion(h.Cfg.Client.MinVersion)
 	if auth.ClientVersionOutdated(clientVer, minVer) {
-		return c.Status(fiber.StatusUpgradeRequired).JSON(fiber.Map{
+		err = c.Status(fiber.StatusUpgradeRequired).JSON(fiber.Map{
 			"detail": fiber.Map{
-				"error":            "client_version_outdated",
-				"current_version":  verStr,
-				"min_version":      h.Cfg.Client.MinVersion,
-				"download_url":     h.Cfg.Client.DownloadURL,
+				"error":           "client_version_outdated",
+				"current_version": verStr,
+				"min_version":     h.Cfg.Client.MinVersion,
+				"download_url":    h.Cfg.Client.DownloadURL,
 			},
 		})
+		return true, err
 	}
-	return nil
+	return false, nil
 }
 
 // createSession is shared by Connect and VerifyDevice.
@@ -192,7 +194,7 @@ func (h *APIHandler) vpnResponse(vlessUUID, accessToken, refreshToken string, po
 
 // Connect handles POST /connect.
 func (h *APIHandler) Connect(c *fiber.Ctx) error {
-	if err := h.checkClientVersion(c); err != nil {
+	if outdated, err := h.checkClientVersion(c); outdated {
 		return err
 	}
 
@@ -281,7 +283,7 @@ func (h *APIHandler) Connect(c *fiber.Ctx) error {
 
 // VerifyDevice handles POST /verify-device.
 func (h *APIHandler) VerifyDevice(c *fiber.Ctx) error {
-	if err := h.checkClientVersion(c); err != nil {
+	if outdated, err := h.checkClientVersion(c); outdated {
 		return err
 	}
 
