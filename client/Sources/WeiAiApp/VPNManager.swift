@@ -392,8 +392,8 @@ class VPNManager: ObservableObject {
             "log": ["level": "warn"],
             "dns": [
                 "servers": [
-                    ["tag": "remote", "address": "8.8.8.8",   "detour": "proxy"],
-                    ["tag": "local",  "address": "223.5.5.5", "detour": "direct"],
+                    ["type": "udp", "tag": "remote", "address": "8.8.8.8",   "detour": "proxy"],
+                    ["type": "udp", "tag": "local",  "address": "223.5.5.5", "detour": "direct"],
                 ],
                 "rules": [["outbound": "any", "server": "local"]],
                 "final": "remote",
