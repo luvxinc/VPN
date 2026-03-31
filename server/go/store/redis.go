@@ -202,6 +202,29 @@ func (r *Redis) SetPolicyChanged(ctx context.Context, userID string) {
 	r.client.Do(ctx, r.client.B().Setex().Key("policy_changed:"+userID).Seconds(300).Value("1").Build())
 }
 
+// SetRateLimitByIP stores upload/download kbps limits for a client IP with the given TTL.
+// Pass 0 for a limit to indicate unlimited.
+func (r *Redis) SetRateLimitByIP(ctx context.Context, clientIP string, upKbps, downKbps int, ttl time.Duration) {
+	val := fmt.Sprintf("%d:%d", upKbps, downKbps)
+	r.client.Do(ctx, r.client.B().Setex().Key("ratelimit:"+clientIP).Seconds(int64(ttl.Seconds())).Value(val).Build())
+}
+
+// GetRateLimitByIP returns upload/download kbps limits for a client IP (0 = unlimited).
+func (r *Redis) GetRateLimitByIP(ctx context.Context, clientIP string) (upKbps, downKbps int) {
+	resp := r.client.Do(ctx, r.client.B().Get().Key("ratelimit:"+clientIP).Build())
+	val, err := resp.ToString()
+	if err != nil {
+		return 0, 0
+	}
+	fmt.Sscanf(val, "%d:%d", &upKbps, &downKbps)
+	return
+}
+
+// DeleteRateLimitByIP removes the rate limit entry for a client IP.
+func (r *Redis) DeleteRateLimitByIP(ctx context.Context, clientIP string) {
+	r.client.Do(ctx, r.client.B().Del().Key("ratelimit:"+clientIP).Build())
+}
+
 // GetAndDeletePolicyChanged returns true and removes the flag if it exists.
 func (r *Redis) GetAndDeletePolicyChanged(ctx context.Context, userID string) bool {
 	key := "policy_changed:" + userID

@@ -9,16 +9,18 @@ import (
 	"path/filepath"
 	"strings"
 	"syscall"
+	"time"
 
 	"github.com/bytedance/sonic"
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/template/html/v2"
 	"github.com/luvxinc/vpn/server/background"
-	"github.com/luvxinc/vpn/server/i18n"
 	"github.com/luvxinc/vpn/server/config"
 	"github.com/luvxinc/vpn/server/geoip"
 	"github.com/luvxinc/vpn/server/handlers"
+	"github.com/luvxinc/vpn/server/i18n"
 	"github.com/luvxinc/vpn/server/middleware"
+	"github.com/luvxinc/vpn/server/proxy"
 	"github.com/luvxinc/vpn/server/store"
 )
 
@@ -146,6 +148,18 @@ func main() {
 	app.Get("/admin/stats", adminAuthMW, adminH.StatsPage)
 	app.Get("/admin/lang", lanMW, adminH.SetLang)
 
+	// Rate-limiting TCP proxy: listens on ProxyPort, forwards to sing-box on SingBoxInternalPort.
+	vpnProxy := &proxy.Server{
+		ListenAddr:  fmt.Sprintf(":%d", cfg.Server.ProxyPort),
+		BackendAddr: fmt.Sprintf("127.0.0.1:%d", cfg.Server.SingBoxInternalPort),
+		Resolver:    &redisRateLimitResolver{rdb: rdb},
+	}
+	go func() {
+		if err := vpnProxy.Run(ctx); err != nil {
+			slog.Error("proxy error", "err", err)
+		}
+	}()
+
 	// Background goroutines
 	poller := background.NewClashPoller(db, rdb, cfg.SingBox.ClashAPIURL)
 	logMgr := background.NewLogManager(db, cfg.Log.RetentionDays, cfg.Log.MaxDomainsPerUserPerDay)
@@ -169,6 +183,21 @@ func main() {
 	if err := app.ListenTLS(addr, certPath, keyPath); err != nil {
 		slog.Error("server error", "err", err)
 		os.Exit(1)
+	}
+}
+
+// redisRateLimitResolver looks up per-IP bandwidth limits from Redis.
+type redisRateLimitResolver struct {
+	rdb *store.Redis
+}
+
+func (r *redisRateLimitResolver) Resolve(clientIP string) proxy.RateLimits {
+	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
+	defer cancel()
+	upKbps, downKbps := r.rdb.GetRateLimitByIP(ctx, clientIP)
+	return proxy.RateLimits{
+		UpBytesPerSec:   int64(upKbps) * 1024 / 8,
+		DownBytesPerSec: int64(downKbps) * 1024 / 8,
 	}
 }
 

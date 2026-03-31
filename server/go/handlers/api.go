@@ -278,6 +278,7 @@ func (h *APIHandler) Connect(c *fiber.Ctx) error {
 		return err
 	}
 
+	h.applyRateLimit(ctx, c.IP(), policy)
 	return c.JSON(h.vpnResponse(vlessUUID, accessToken, refreshToken, policy))
 }
 
@@ -370,6 +371,7 @@ func (h *APIHandler) VerifyDevice(c *fiber.Ctx) error {
 		return err
 	}
 
+	h.applyRateLimit(ctx, c.IP(), policy)
 	return c.JSON(h.vpnResponse(vlessUUID, accessToken, refreshToken, policy))
 }
 
@@ -406,6 +408,7 @@ func (h *APIHandler) Disconnect(c *fiber.Ctx) error {
 		}
 	}
 
+	h.RDB.DeleteRateLimitByIP(ctx, c.IP())
 	return c.JSON(fiber.Map{"status": "ok"})
 }
 
@@ -504,4 +507,23 @@ func (h *APIHandler) Status(c *fiber.Ctx) error {
 		QuotaExceeded:      exceeded,
 		PolicyChanged:      changed,
 	})
+}
+
+// applyRateLimit writes per-IP rate limits to Redis so the proxy can enforce them.
+func (h *APIHandler) applyRateLimit(_ interface{}, clientIP string, policy models.UserPolicy) {
+	up := 0
+	if policy.SpeedLimitUpKbps != nil {
+		up = *policy.SpeedLimitUpKbps
+	}
+	down := 0
+	if policy.SpeedLimitDownKbps != nil {
+		down = *policy.SpeedLimitDownKbps
+	}
+	if up == 0 && down == 0 {
+		return // unlimited, nothing to store
+	}
+	ttl := time.Duration(h.Cfg.Auth.RefreshExpiryHours) * time.Hour
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	h.RDB.SetRateLimitByIP(ctx, clientIP, up, down, ttl)
 }

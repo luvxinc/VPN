@@ -21,15 +21,17 @@ type RedisConfig struct {
 }
 
 type ServerConfig struct {
-	IP               string `yaml:"ip"`
-	Port             int    `yaml:"port"`
-	AuthPort         int    `yaml:"auth_port"`
-	WSPort           int    `yaml:"ws_port"`
-	WSFallbackDomain string `yaml:"ws_fallback_domain"`
-	PublicKey        string `yaml:"public_key"`
-	PrivateKey       string `yaml:"private_key"`
-	ShortID          string `yaml:"short_id"`
-	ServerName       string `yaml:"server_name"`
+	IP                  string `yaml:"ip"`
+	Port                int    `yaml:"port"`
+	AuthPort            int    `yaml:"auth_port"`
+	WSPort              int    `yaml:"ws_port"`
+	WSFallbackDomain    string `yaml:"ws_fallback_domain"`
+	PublicKey           string `yaml:"public_key"`
+	PrivateKey          string `yaml:"private_key"`
+	ShortID             string `yaml:"short_id"`
+	ServerName          string `yaml:"server_name"`
+	ProxyPort           int    `yaml:"proxy_port"`            // Go rate-limit proxy listen port (pf target), default 8443
+	SingBoxInternalPort int    `yaml:"singbox_internal_port"` // sing-box actual listen port (internal), default 18443
 }
 
 type AuthConfig struct {
@@ -116,6 +118,12 @@ func Load() (*Config, error) {
 	}
 	if cfg.Server.WSPort == 0 {
 		cfg.Server.WSPort = 8888
+	}
+	if cfg.Server.ProxyPort == 0 {
+		cfg.Server.ProxyPort = 8443
+	}
+	if cfg.Server.SingBoxInternalPort == 0 {
+		cfg.Server.SingBoxInternalPort = 18443
 	}
 	if cfg.Client.MinVersion == "" {
 		cfg.Client.MinVersion = MinClientVersion
