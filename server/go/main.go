@@ -67,7 +67,7 @@ func main() {
 		return fmt.Sprintf("%.1f", float64(b)/1048576)
 	})
 	engine.AddFunc("toGB", func(b int64) string {
-		return fmt.Sprintf("%.2f", float64(b)/1073741824)
+		return fmt.Sprintf("%.4f", float64(b)/1073741824)
 	})
 	engine.AddFunc("toKB", func(b int64) string {
 		return fmt.Sprintf("%.1f", float64(b)/1024)
@@ -80,7 +80,7 @@ func main() {
 		if p == nil {
 			return ""
 		}
-		return fmt.Sprintf("%.1f", float64(*p)/1073741824)
+		return fmt.Sprintf("%.4f", float64(*p)/1073741824)
 	})
 	engine.AddFunc("kbpsToMbps", func(p *int) string {
 		if p == nil {
