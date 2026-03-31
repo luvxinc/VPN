@@ -177,11 +177,12 @@ class VPNManager: ObservableObject {
                 return
             }
 
-            Thread.sleep(forTimeInterval: 2.0)
+            // The helper script blocks until the Clash API on port 9091 responds
+            // (or times out and returns exit 1). If we reach here with status == 0,
+            // sing-box is confirmed ready. A short buffer lets the TUN routes settle.
+            Thread.sleep(forTimeInterval: 0.5)
 
-            // Verify sing-box is actually running before declaring connected.
-            // If it failed to start, read the log and surface a real error
-            // instead of entering a phantom "connected → disconnected" loop.
+            // Final sanity check: confirm the process is still alive.
             if !self.isSingBoxRunning() {
                 let log = (try? String(contentsOfFile: "/tmp/weiai_sb.log", encoding: .utf8))?
                     .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
@@ -390,6 +391,14 @@ class VPNManager: ObservableObject {
 
         let config: [String: Any] = [
             "log": ["level": "warn"],
+            // Clash API on 9091 — used by weiai-helper.sh to detect when sing-box
+            // is fully initialised before declaring the connection "ready".
+            "experimental": [
+                "clash_api": [
+                    "external_controller": "127.0.0.1:9091",
+                    "secret": ""
+                ]
+            ],
             "dns": [
                 "servers": [
                     ["type": "udp", "tag": "remote", "server": "8.8.8.8",   "server_port": 53, "detour": finalOutbound],

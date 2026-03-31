@@ -9,6 +9,21 @@ Version format: `MAJOR.MINOR.PATCH`
 
 ---
 
+## [1.1.8] — 2026-03-31
+
+### Client (macOS)
+- **Fix: no internet after login** — sing-box was declared "connected" the moment its
+  process started, but `strict_route: true` had already captured all traffic before the
+  VLESS-Reality handshake completed, leaving the user with no internet access.
+  - Added `experimental.clash_api` (port 9091) to the client sing-box config.
+  - `weiai-helper.sh` now polls the Clash API after launch and blocks until sing-box is
+    fully ready (up to 12 s) before returning exit 0. The app only sets `isConnected =
+    true` after the helper confirms readiness.
+  - Existing users must reinstall the client (or delete `/usr/local/bin/weiai-helper`)
+    so the new helper script takes effect.
+
+---
+
 ## [1.0.0] — 2026-03-30
 
 Initial production release. Complete rewrite from single-user prototype.
