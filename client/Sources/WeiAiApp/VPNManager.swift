@@ -160,6 +160,9 @@ class VPNManager: ObservableObject {
             }
             let scriptContent = """
             #!/bin/sh
+            /sbin/route delete -net 0.0.0.0/1 127.0.0.1 2>/dev/null || true
+            /sbin/route delete -net 128.0.0.0/1 127.0.0.1 2>/dev/null || true
+            rm -f /tmp/weiai_ks_active
             \(routeLines)
             "\(sbPath)" run -c "\(cfgPath)" > /tmp/weiai_sb.log 2>&1 &
             echo $! > "\(pidPath)"
