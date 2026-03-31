@@ -151,8 +151,12 @@ class VPNManager: ObservableObject {
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             guard let self = self else { return }
 
-            // First-time setup: install privileged helper so we never need osascript again.
-            if !PrivilegedHelper.isInstalled {
+            // Install (or force-update) the privileged helper whenever the bundled
+            // version is newer than what was last installed. This ensures the new
+            // weiai-helper.sh (with Clash API readiness polling) is always deployed,
+            // even if the helper was already installed by an older build.
+            let installedHelperVersion = UserDefaults.standard.string(forKey: "helperAppVersion") ?? ""
+            if !PrivilegedHelper.isInstalled || installedHelperVersion != AppVersion.current {
                 let bundleHelper = Bundle.main.path(forResource: "weiai-helper", ofType: "sh")
                     ?? (Bundle.main.bundlePath + "/Contents/Resources/weiai-helper.sh")
                 if let errMsg = PrivilegedHelper.install(bundleHelperPath: bundleHelper) {
@@ -162,6 +166,7 @@ class VPNManager: ObservableObject {
                     }
                     return
                 }
+                UserDefaults.standard.set(AppVersion.current, forKey: "helperAppVersion")
             }
 
             // Build args: launch <sb> <cfg> <pid> <gateway> <server> [ws_ips...]
@@ -177,20 +182,19 @@ class VPNManager: ObservableObject {
                 return
             }
 
-            // The helper script blocks until the Clash API on port 9091 responds
-            // (or times out and returns exit 1). If we reach here with status == 0,
-            // sing-box is confirmed ready. A short buffer lets the TUN routes settle.
-            Thread.sleep(forTimeInterval: 0.5)
-
-            // Final sanity check: confirm the process is still alive.
-            if !self.isSingBoxRunning() {
+            // Wait until the VPN proxy is genuinely reachable:
+            //   Phase 1 — Clash API on 9091 responds (sing-box control plane up)
+            //   Phase 2 — delay test *through* the VLESS outbound passes (tunnel carrying traffic)
+            // This prevents strict_route from capturing traffic before the tunnel is ready.
+            if !self.waitForProxyReady() {
                 let log = (try? String(contentsOfFile: "/tmp/weiai_sb.log", encoding: .utf8))?
                     .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
                 let detail = log.isEmpty ? "" : "\n\(log.prefix(300))"
                 AuthService.shared.disconnect()
+                VPNManager.stopSingBoxStatic(pidPath: pidPath, serverIP: serverIP, wsIPs: wsIPs)
                 Task { @MainActor in
                     self.isConnecting = false
-                    completion("VPN 启动失败\(detail)")
+                    completion("VPN 连接超时，请检查网络后重试\(detail)")
                 }
                 return
             }
@@ -310,6 +314,65 @@ class VPNManager: ObservableObject {
     }
 
     // MARK: - Helpers
+
+    /// Two-phase readiness check for sing-box after launch.
+    ///
+    /// **Phase 1** — polls `http://127.0.0.1:9091/version` until the Clash API responds,
+    ///               confirming sing-box's control plane is up (fast, ~100 ms).
+    ///
+    /// **Phase 2** — calls the Clash API delay-test endpoint for each known outbound tag.
+    ///               This sends a real HTTP request *through the VLESS proxy* and verifies
+    ///               the tunnel is actually forwarding traffic before we set isConnected.
+    ///
+    /// Only returns `true` when both phases pass within `timeout` seconds.
+    private func waitForProxyReady(clashPort: Int = 9091, timeout: TimeInterval = 15.0) -> Bool {
+        let deadline = Date().addingTimeInterval(timeout)
+
+        // ── Phase 1: Clash API up ──────────────────────────────────────────────
+        guard let apiURL = URL(string: "http://127.0.0.1:\(clashPort)/version") else { return false }
+        var apiUp = false
+        while !apiUp && Date() < deadline {
+            let sem = DispatchSemaphore(value: 0)
+            URLSession(configuration: .ephemeral)
+                .dataTask(with: URLRequest(url: apiURL, timeoutInterval: 1)) { _, resp, _ in
+                    apiUp = (resp as? HTTPURLResponse)?.statusCode == 200
+                    sem.signal()
+                }.resume()
+            sem.wait()
+            if !apiUp { Thread.sleep(forTimeInterval: 0.5) }
+        }
+        guard apiUp else { return false }
+
+        // ── Phase 2: VLESS tunnel connectivity via delay test ──────────────────
+        // Try every possible outbound tag; the one that exists in this config will pass.
+        let testURL = "https://cp.cloudflare.com/generate_204"
+            .addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
+        for tag in ["proxy", "reality-direct", "ws-cdn"] {
+            let remaining = deadline.timeIntervalSinceNow
+            guard remaining > 0.5 else { return false }
+            let ms = max(1000, Int(remaining * 1000) - 500)
+            let encodedTag = tag.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? tag
+            guard let url = URL(string:
+                "http://127.0.0.1:\(clashPort)/proxies/\(encodedTag)/delay?url=\(testURL)&timeout=\(ms)"
+            ) else { continue }
+
+            let sem = DispatchSemaphore(value: 0)
+            var connected = false
+            URLSession(configuration: .ephemeral)
+                .dataTask(with: URLRequest(url: url, timeoutInterval: remaining)) { data, resp, _ in
+                    if let http = resp as? HTTPURLResponse, http.statusCode == 200,
+                       let data = data,
+                       let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                       json["delay"] != nil {
+                        connected = true
+                    }
+                    sem.signal()
+                }.resume()
+            sem.wait()
+            if connected { return true }
+        }
+        return false
+    }
 
     nonisolated static func defaultGateway() -> String? {
         let p = Process(); let pipe = Pipe()
