@@ -85,7 +85,7 @@
         </td>
       </tr>
       {{end}}
-      {{if not .Users}}
+      {{if eq (len .Users) 0}}
       <tr>
         <td colspan="6" class="px-4 py-10 text-center text-gray-500">{{t "users.empty"}}</td>
       </tr>
@@ -178,8 +178,8 @@ document.addEventListener('htmx:afterSwap', function(e) {
         <div class="bg-gray-800 rounded-xl py-4 px-6 mb-3">
           <p class="text-3xl font-mono font-bold tracking-widest text-yellow-400">${data.code}</p>
         </div>
-        <p class="text-xs text-gray-500">{{t "modal.code.valid"}}</p>
-        <p class="text-xs text-gray-500 mt-1">{{t "modal.code.share"}}</p>
+        <p class="text-xs text-gray-500">Valid for 15 minutes &middot; single use</p>
+        <p class="text-xs text-gray-500 mt-1">Share this code with the user</p>
       `;
     } catch(err) {}
   }
