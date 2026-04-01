@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -38,6 +39,8 @@ type DeviceUser struct {
 	UUID string
 }
 
+var syncMu sync.Mutex
+
 // SyncUsers atomically rewrites the sing-box config with the full set of
 // active device users, then hot-reloads the running sing-box via SIGHUP.
 //
@@ -60,6 +63,9 @@ type DeviceUser struct {
 // Fallback: if the PID cannot be found via pgrep, falls back to the legacy
 // pkill flow so nothing breaks in degraded environments.
 func SyncUsers(configPath string, users []DeviceUser) error {
+	syncMu.Lock()
+	defer syncMu.Unlock()
+
 	// ── Step 1: Rewrite on-disk config (atomically) ───────────────────────────
 	if err := rewriteConfigMultiUser(configPath, users); err != nil {
 		return err
