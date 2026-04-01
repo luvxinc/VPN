@@ -547,7 +547,10 @@ func (h *APIHandler) Status(c *fiber.Ctx) error {
 
 	// Heartbeat: update last_heartbeat_at so the admin panel shows real-time online status.
 	if sessionID, err2 := uuid.Parse(info.SessionID); err2 == nil {
-		h.DB.UpdateSessionHeartbeat(ctx, sessionID)
+		if !h.DB.UpdateSessionHeartbeat(ctx, sessionID) {
+			h.RDB.DeleteKey(ctx, "active_session:"+deviceID)
+			return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"detail": "Session evaporated (ghost heartbeat), please reconnect"})
+		}
 	}
 
 	return c.JSON(models.PolicyStatus{

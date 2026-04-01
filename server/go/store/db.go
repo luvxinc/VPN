@@ -243,11 +243,13 @@ func (d *DB) DeactivateUserDevices(ctx context.Context, userID uuid.UUID) error 
 
 // UpdateSessionHeartbeat refreshes last_heartbeat_at for an active session.
 // Called by the /status endpoint so stale sessions can be detected.
-func (d *DB) UpdateSessionHeartbeat(ctx context.Context, sessionID uuid.UUID) {
-	_, _ = d.pool.Exec(ctx,
+// Returns true if an active session was updated, false if not found.
+func (d *DB) UpdateSessionHeartbeat(ctx context.Context, sessionID uuid.UUID) bool {
+	res, _ := d.pool.Exec(ctx,
 		"UPDATE sessions SET last_heartbeat_at=NOW() WHERE id=$1 AND is_active=true",
 		sessionID,
 	)
+	return res.RowsAffected() > 0
 }
 
 // DeactivateStaleSessions marks as inactive any active session whose heartbeat

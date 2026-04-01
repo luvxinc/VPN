@@ -183,7 +183,7 @@ func main() {
 	}()
 
 	// Background goroutines
-	poller := background.NewStatsPoller(db, rdb, "127.0.0.1:10086")
+	poller := background.NewStatsPoller(db, rdb, cfg, "127.0.0.1:10086")
 	poller.Start()
 	defer poller.Stop()
 	logMgr := background.NewLogManager(db, cfg.Log.RetentionDays, cfg.Log.MaxDomainsPerUserPerDay)
