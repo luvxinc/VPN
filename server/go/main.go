@@ -183,10 +183,11 @@ func main() {
 	}()
 
 	// Background goroutines
-	poller := background.NewClashPoller(db, rdb, cfg.SingBox.ClashAPIURL)
+	poller := background.NewStatsPoller(db, rdb, "127.0.0.1:10086")
+	poller.Start()
+	defer poller.Stop()
 	logMgr := background.NewLogManager(db, cfg.Log.RetentionDays, cfg.Log.MaxDomainsPerUserPerDay)
 	sessionCleaner := background.NewSessionCleaner(db)
-	go poller.Run(ctx)
 	go logMgr.Run(ctx)
 	go sessionCleaner.Run(ctx)
 	go healthMonitor.Run(ctx) // P3: outbound health monitor

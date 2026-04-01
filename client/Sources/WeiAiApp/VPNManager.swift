@@ -263,11 +263,13 @@ class VPNManager: ObservableObject {
     }
 
     private func pollStatus() {
-        AuthService.shared.fetchStatus { [weak self] status in
-            guard let self = self, let status = status else { return }
-            Task { @MainActor in
-                self.policy = UserPolicy(
-                    speedLimitUpKbps:   status.speedLimitUpKbps,
+        AuthService.shared.refreshTokenIfNeeded { [weak self] success in
+            guard let self = self, success else { return }
+            AuthService.shared.fetchStatus { [weak self] status in
+                guard let self = self, let status = status else { return }
+                Task { @MainActor in
+                    self.policy = UserPolicy(
+                        speedLimitUpKbps:   status.speedLimitUpKbps,
                     speedLimitDownKbps: status.speedLimitDownKbps,
                     quotaBytes:         status.quotaBytes,
                     quotaPeriod:        status.quotaPeriod,
