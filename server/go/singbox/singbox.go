@@ -203,6 +203,7 @@ func rewriteConfigMultiUser(configPath string, users []DeviceUser) error {
 
 		// Build the user list for this inbound
 		type UserEntry struct {
+			Name string `json:"name"`
 			UUID string `json:"uuid"`
 			Flow string `json:"flow,omitempty"`
 		}
@@ -212,7 +213,7 @@ func rewriteConfigMultiUser(configPath string, users []DeviceUser) error {
 			if isReality {
 				flow = "xtls-rprx-vision"
 			}
-			entries = append(entries, UserEntry{UUID: u.UUID, Flow: flow})
+			entries = append(entries, UserEntry{Name: u.UUID, UUID: u.UUID, Flow: flow})
 		}
 
 		usersJSON, err := json.Marshal(entries)
