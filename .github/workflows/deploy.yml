@@ -18,6 +18,12 @@ jobs:
           export PATH=/opt/homebrew/bin:$PATH
           go build -ldflags="-s -w" -o ../authserver .
 
+      - name: Apply DB Migrations
+        working-directory: /Users/aaronsever/Developer/VPN/server
+        run: |
+          psql weiai_vpn -f db/migration_002_heartbeat.sql || true
+          psql weiai_vpn -f db/migration_003_device_uuid.sql || true
+
       - name: Build client
         working-directory: /Users/aaronsever/Developer/VPN/client
         run: |
@@ -53,11 +59,11 @@ jobs:
           EN_IP=$(ipconfig getifaddr $ACTIVE_IF 2>/dev/null || echo "")
           if [ -n "$EN_IP" ]; then
             # Replace loopback redirect with the actual interface IP so return-path routing works
-            sudo sed -i '' \
+            sudo -n sed -i '' \
               "s|rdr pass inet proto tcp from any to any port = 443 -> .* port 8443|rdr pass on $ACTIVE_IF proto tcp from any to any port = 443 -> $EN_IP port 8443|g" \
-              /etc/pf.conf
-            sudo pfctl -f /etc/pf.conf 2>/dev/null || true
-            echo "pf rule updated: bound to $ACTIVE_IF with IP $EN_IP"
+              /etc/pf.conf || echo "Skipped sed pf.conf due to sudo password requirement"
+            sudo -n pfctl -f /etc/pf.conf 2>/dev/null || echo "Skipped pfctl due to sudo password requirement"
+            echo "pf rule updated: bound to $ACTIVE_IF with IP $EN_IP (if sudo succeeded)"
           else
             echo "Active IP not found, skipping pf update"
           fi
