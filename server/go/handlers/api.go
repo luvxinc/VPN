@@ -97,7 +97,7 @@ func (h *APIHandler) createSession(c *fiber.Ctx, userIDStr, fingerprint string, 
 			return "", "", "", fmt.Errorf("assign device uuid: %w", err)
 		}
 		// Sync ALL device UUIDs to sing-box (one-time SIGHUP for this device).
-		if err := h.syncSingBoxUsers(ctx); err != nil {
+		if err := h.SyncSingBoxUsers(ctx); err != nil {
 			return "", "", "", fmt.Errorf("sing-box user sync: %w", err)
 		}
 
@@ -161,11 +161,11 @@ func (h *APIHandler) createSession(c *fiber.Ctx, userIDStr, fingerprint string, 
 	return vlessUUID, accessToken, refreshToken, nil
 }
 
-// syncSingBoxUsers fetches all active device UUIDs from DB and syncs them to
+// SyncSingBoxUsers fetches all active device UUIDs from DB and syncs them to
 // the sing-box config via a single SIGHUP. Called only when the device UUID
-// pool changes (first registration or kick).
+// pool changes (first registration or kick), AND on server boot.
 // Returns an error so callers can surface failures (e.g. disk full, config missing).
-func (h *APIHandler) syncSingBoxUsers(ctx context.Context) error {
+func (h *APIHandler) SyncSingBoxUsers(ctx context.Context) error {
 	uuids, err := h.DB.GetAllActiveDeviceUsers(ctx)
 	if err != nil {
 		slog.Error("syncSingBoxUsers: failed to fetch active device UUIDs", "err", err)

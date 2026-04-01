@@ -164,6 +164,11 @@ func main() {
 	app.Get("/admin/lang", lanMW, adminH.SetLang)
 	app.Get("/admin/api/health", adminAuthMW, adminH.APIHealth) // P3: outbound health
 
+	// P1: Sync users to sing-box config on server boot to guarantee consistency
+	if err := apiH.SyncSingBoxUsers(ctx); err != nil {
+		slog.Error("failed to sync sing-box users on boot", "err", err)
+	}
+
 	// Rate-limiting TCP proxy: listens on ProxyPort, forwards to sing-box on SingBoxInternalPort.
 	vpnProxy := &proxy.Server{
 		ListenAddr:  fmt.Sprintf(":%d", cfg.Server.ProxyPort),
