@@ -135,6 +135,7 @@ func main() {
 	// Public routes
 	app.Get("/health", handlers.Health(VERSION))
 	app.Get("/download/client", handlers.DownloadClient(resolve(cfg.Client.ClientZipPath)))
+	app.Get("/install", apiH.InstallScript)
 
 	// API routes
 	app.Post("/connect", rateLimitMW, apiH.Connect)
