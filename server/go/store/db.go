@@ -134,8 +134,8 @@ func (d *DB) GetAllActiveDeviceUsers(ctx context.Context) ([]string, error) {
 // UpsertDevice inserts or re-activates a device. Returns (id, isActive).
 func (d *DB) UpsertDevice(ctx context.Context, userID uuid.UUID, fingerprint, name string) (id uuid.UUID, active bool, err error) {
 	row := d.pool.QueryRow(ctx,
-		`INSERT INTO devices (user_id, device_fingerprint, device_name)
-		 VALUES ($1, $2, $3)
+		`INSERT INTO devices (user_id, device_fingerprint, device_name, vless_uuid)
+		 VALUES ($1, $2, $3, '')
 		 ON CONFLICT (device_fingerprint) DO UPDATE SET is_active=true, last_seen=NOW()
 		 RETURNING id, is_active`,
 		userID, fingerprint, name,
