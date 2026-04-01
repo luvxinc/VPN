@@ -41,7 +41,7 @@ certs:
   key_path: "certs/server.key"
 
 sing_box:
-  config_path: "sing-box-server.json"
+  config_path: "/Users/aaronsever/.config/sing-box/config.json"
   binary_path: "/usr/local/bin/sing-box"
   clash_api_url: "http://127.0.0.1:9090"
 
