@@ -786,35 +786,9 @@ traffic_daily    — Daily upload/download totals per user
 
 ## Changelog
 
-### v1.2.0 — 2026-03-30
+Please see [CHANGELOG.md](CHANGELOG.md) for a complete history of releases, features, and bug fixes across all server and client iterations.
 
-- Multi-path transport: VLESS+Reality (primary, direct) + VLESS+WebSocket via Cloudflare CDN (automatic fallback)
-- Auth server moved to standard port 443 (was 9443); sing-box Reality moved to 8443
-- Cloudflare Tunnel support: auth endpoint served through CDN, server IP hidden from clients
-- Dual-session `URLSession`: cert pinning for direct IP, standard CA for CDN path
-- Client tries CDN auth first, falls back to direct with cert pinning on network failure
-- `urltest` outbound in client sing-box config: auto-selects lower-latency VPN path every 3 minutes
-- Route bypass: client resolves CDN domain IPs at launch and adds bypass routes to prevent tunnel loops
-- `ws_fallback_domain` / `ws_fallback_port` / `ws_fallback_path` returned in `/connect` response
-- `cdn_auth_url` field added to client `config.json`
 
-### v1.1.0 — 2026-03-30
-
-- Per-user upload/download speed limits (Kbps), configurable from admin dashboard
-- Per-user traffic quotas (daily/weekly/monthly); auto-disconnect when exceeded, reset at next cycle
-- Client menu bar: quota usage badge (`345G/1024G`), reset countdown, server latency (TCP ping)
-- Real-time policy push: admin changes propagate to client within 30 seconds via Redis flag + `/status` polling
-- Smooth in-app auto-update: progress bar download, silent bundle replacement, automatic relaunch
-- Client i18n: English and Simplified Chinese, follows system locale
-- Admin dashboard: all confirmations use HTML modals (no native browser dialogs)
-- SF Symbols throughout macOS client (heart, bolt, chart, speedometer, power)
-- CI/CD: GitHub Actions builds client zip on Mac Mini on every push
-
-### v1.0.0 — 2026-03-30
-
-- Initial release
-- Go/Fiber server replacing Python/FastAPI (~18 MB memory, ~0.8 ms auth p99)
-- macOS client with kill switch and certificate pinning
 
 ---
 

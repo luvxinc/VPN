@@ -9,6 +9,16 @@ Version format: `MAJOR.MINOR.PATCH`
 
 ---
 
+## [1.1.14] — 2026-04-01
+
+### Client (macOS)
+- **Feature: Seamless Reconnection & Persistent Credentials** — When a user manually disconnects, the app no longer clears their username and password from the Keychain. The UI retains the credentials, allowing for instant, one-click reconnection. Only the ephemeral access and refresh tokens are wiped during a disconnect.
+
+### Server
+- **Fix: Ghost Session Revival** — Devices waking up from macOS sleep that were previously marked offline by the background cleaner will now instantly reactivate (`is_active=true`) upon sending a heartbeat. This ensures the admin dashboard accurately reflects online status without punishing valid connections with a 401 Unauthorized kick.
+
+---
+
 ## [1.1.13] — 2026-04-01
 
 ### Server — Architecture Improvement (v2ray-core Inspiration)
@@ -70,6 +80,19 @@ Version format: `MAJOR.MINOR.PATCH`
 
 ---
 
+## [1.1.11] — 2026-03-31
+
+### Client (macOS)
+- **Fix: Server Restart Race Condition** — Added a retry loop in `waitForProxyReady` to gracefully handle the 3-5s restart window of the server's sing-box process, eliminating premature connection failures.
+
+---
+
+## [1.1.10] — 2026-03-31
+
+### Server & Client
+- **Fix: Cloudflare WS Fallback & Packet Filtering** — Corrected macOS `pf` firewall routing and firmly established the Cloudflare WebSocket fallback tunnel logic, ensuring traffic routes flawlessly when the direct VLESS Reality IP is blocked or unavailable.
+
+---
 
 ## [1.1.9] — 2026-03-31
 
@@ -100,6 +123,62 @@ Version format: `MAJOR.MINOR.PATCH`
     true` after the helper confirms readiness.
   - Existing users must reinstall the client (or delete `/usr/local/bin/weiai-helper`)
     so the new helper script takes effect.
+
+---
+
+## [1.1.7] — 2026-03-31
+
+### Client (macOS)
+- **Fix: DNS Config** — Removed `detour` property from the local DNS server block to comply with sing-box requirements (runtime verified).
+
+---
+
+## [1.1.6] — 2026-03-31
+
+### Client (macOS)
+- **Fix: DNS Config** — Remote DNS detour now correctly targets `finalOutbound` instead of relying on a hardcoded "proxy" tag.
+
+---
+
+## [1.1.5] — 2026-03-31
+
+### Client (macOS)
+- **Fix: DNS Compatibility** — Corrected sing-box 1.13.4 DNS rules to resolve strict schema validation errors (verified against binary before shipping).
+
+---
+
+## [1.1.4] — 2026-03-31
+
+### Client (macOS)
+- **Fix: DNS Compatibility** — Updated the client-side DNS server address format to be compatible with sing-box v1.12+.
+
+---
+
+## [1.1.3] — 2026-03-31
+
+### Client (macOS)
+- **Fix: Auto-Update Engine** — Completely rewrote the update installer to bypass shell scripts and use direct Swift file copying, plus added no-cache HTTP headers to ensure users always receive the freshest binary.
+
+---
+
+## [1.1.2] — 2026-03-31
+
+### Client (macOS)
+- **Fix: macOS Gatekeeper** — Implemented self-relocating logic on first launch to automatically escape macOS App Translocation quarantine.
+
+---
+
+## [1.1.1] — 2026-03-30
+
+### Client (macOS)
+- **Fix: Auto-Update Loop** — Solved the infinite auto-update loop specifically triggered by macOS App Translocation, allowing updates to seamlessly apply and launch.
+
+---
+
+## [1.1.0] — 2026-03-30
+
+### Server & Client
+- **Performance: Network Topology** — Moved the primary auth port to 443 and optimized direct DNS configuration routing, restoring latency parity to match the legacy Python server benchmarks.
 
 ---
 

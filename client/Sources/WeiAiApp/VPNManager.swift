@@ -263,7 +263,7 @@ class VPNManager: ObservableObject {
     }
 
     private func pollStatus() {
-        AuthService.shared.refreshTokenIfNeeded { [weak self] success in
+        AuthService.shared.refreshToken { [weak self] success in
             guard let self = self, success else { return }
             AuthService.shared.fetchStatus { [weak self] status in
                 guard let self = self, let status = status else { return }
@@ -287,6 +287,7 @@ class VPNManager: ObservableObject {
             }
         }
     }
+}
 
     private func measureLatency() {
         guard let serverIP = currentServerIP else { return }

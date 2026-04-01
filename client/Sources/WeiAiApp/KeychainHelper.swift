@@ -46,7 +46,7 @@ struct KeychainHelper {
     }
 
     static func clearAll() {
-        for key in [KeychainKey.username, .password, .accessToken, .refreshToken] {
+        for key in [KeychainKey.accessToken, .refreshToken] {
             delete(key)
         }
     }
