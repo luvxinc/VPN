@@ -21,6 +21,7 @@ import (
 	"github.com/luvxinc/vpn/server/i18n"
 	"github.com/luvxinc/vpn/server/middleware"
 	"github.com/luvxinc/vpn/server/proxy"
+	"github.com/luvxinc/vpn/server/singbox"
 	"github.com/luvxinc/vpn/server/store"
 )
 
@@ -57,6 +58,13 @@ func main() {
 
 	// Resolve sing-box config path (must be absolute for atomic rename)
 	cfg.SingBox.ConfigPath = resolve(cfg.SingBox.ConfigPath)
+
+	// Wire the Clash API URL into the singbox package so UpdateUUID can
+	// hot-reload users without restarting sing-box (analogous to v2ray-core's
+	// Validator.Add/Del which operates on a live in-memory sync.Map).
+	if addr := cfg.SingBox.ClashAPIURL; addr != "" {
+		singbox.SetClashAPIURL(addr)
+	}
 
 	// Resolve cert paths
 	certPath := resolve(cfg.Certs.CertPath)
@@ -105,9 +113,16 @@ func main() {
 		ErrorHandler: customErrorHandler,
 	})
 
+	// P3: Outbound health monitor is declared here before adminH so the pointer is valid.
+	// The goroutine is started later after all setup is done.
+	healthMonitor := background.NewOutboundHealthMonitor(
+		cfg.SingBox.ClashAPIURL,
+		cfg.SingBox.OutboundTags,
+	)
+
 	// Handler instances
 	apiH := &handlers.APIHandler{DB: db, RDB: rdb, Cfg: cfg}
-	adminH := &handlers.AdminHandler{DB: db, RDB: rdb, Cfg: cfg}
+	adminH := &handlers.AdminHandler{DB: db, RDB: rdb, Cfg: cfg, HealthMonitor: healthMonitor}
 
 	// Middleware instances
 	rateLimitMW := middleware.RateLimit(rdb)
@@ -147,6 +162,7 @@ func main() {
 	app.Get("/admin/logs", adminAuthMW, adminH.LogsPage)
 	app.Get("/admin/stats", adminAuthMW, adminH.StatsPage)
 	app.Get("/admin/lang", lanMW, adminH.SetLang)
+	app.Get("/admin/api/health", adminAuthMW, adminH.APIHealth) // P3: outbound health
 
 	// Rate-limiting TCP proxy: listens on ProxyPort, forwards to sing-box on SingBoxInternalPort.
 	vpnProxy := &proxy.Server{
@@ -167,6 +183,7 @@ func main() {
 	go poller.Run(ctx)
 	go logMgr.Run(ctx)
 	go sessionCleaner.Run(ctx)
+	go healthMonitor.Run(ctx) // P3: outbound health monitor
 
 	// Graceful shutdown
 	quit := make(chan os.Signal, 1)

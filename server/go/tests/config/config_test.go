@@ -67,7 +67,7 @@ client:
 	assert.Equal(t, 443, cfg.Server.Port)
 	assert.Equal(t, "supersecretkey_atleast32chars!!!", cfg.Auth.JWTSecret)
 	assert.Equal(t, 15, cfg.Auth.JWTExpiryMinutes)
-	assert.Equal(t, "1.0.0", cfg.Client.MinVersion)
+	assert.Equal(t, "1.0.0", cfg.Client.MinVersion) // explicit in config, not the default
 	assert.Equal(t, []string{"127."}, cfg.Admin.AllowedLANPrefixes)
 }
 
@@ -101,7 +101,7 @@ admin:
 	assert.Equal(t, 24, cfg.Auth.RefreshExpiryHours)
 	assert.Equal(t, 90, cfg.Log.RetentionDays)
 	assert.Equal(t, 500, cfg.Log.MaxDomainsPerUserPerDay)
-	assert.Equal(t, "1.0.0", cfg.Client.MinVersion)
+	assert.Equal(t, config.MinClientVersion, cfg.Client.MinVersion) // falls back to package constant
 }
 
 func TestLoad_MissingFile(t *testing.T) {

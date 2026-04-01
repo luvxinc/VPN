@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"fmt"
+	"log/slog"
 	"math/big"
 	"strconv"
 	"strings"
@@ -13,6 +14,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/luvxinc/vpn/server/auth"
+	"github.com/luvxinc/vpn/server/background"
 	"github.com/luvxinc/vpn/server/config"
 	"github.com/luvxinc/vpn/server/models"
 	"github.com/luvxinc/vpn/server/singbox"
@@ -23,6 +25,9 @@ type AdminHandler struct {
 	DB  *store.DB
 	RDB *store.Redis
 	Cfg *config.Config
+	// P3: HealthMonitor provides outbound path health data for /admin/api/health.
+	// Nil-safe: if no outbound_tags are configured, APIHealth returns an empty list.
+	HealthMonitor *background.OutboundHealthMonitor
 }
 
 // ── Template data structs ─────────────────────────────────────────────────────
@@ -377,6 +382,14 @@ func (h *AdminHandler) StatsPage(c *fiber.Ctx) error {
 
 // KickUserSessions force-disconnects all active sessions for a user.
 // Exported for use in tests.
+//
+// Security model:
+// - Marks all sessions as inactive in DB.
+// - Deletes all Redis session keys (active_session:fp, vless_map:uuid, refresh:token).
+// - Deactivates all devices for the user (is_active=false), removing them from the
+//   sing-box user pool via the next GetAllActiveDeviceUsers query.
+// - Does NOT rotate UUIDs: the UUID stays stable on the device record; if the user
+//   re-registers later, they naturally get a new stable UUID via AssignDeviceUUID.
 func KickUserSessions(ctx context.Context, db *store.DB, rdb *store.Redis, cfg *config.Config, userID uuid.UUID) error {
 	actives, err := db.GetActiveSessionsByUser(ctx, userID)
 	if err != nil {
@@ -392,10 +405,34 @@ func KickUserSessions(ctx context.Context, db *store.DB, rdb *store.Redis, cfg *
 	if err := db.DeactivateUserSessions(ctx, userID); err != nil {
 		return err
 	}
-	// Update sing-box to a random UUID so the old user can't connect
-	singbox.UpdateUUID(cfg.SingBox.ConfigPath, uuid.New().String())
+	// Deactivate all devices for this user so GetAllActiveDeviceUsers naturally
+	// excludes them from the sing-box user pool. This is the correct, clean way
+	// to remove a user's proxy access without leaving "ghost" UUIDs in sing-box.
+	if err := db.DeactivateUserDevices(ctx, userID); err != nil {
+		slog.Error("KickUserSessions: failed to deactivate user devices", "user_id", userID, "err", err)
+		// Non-fatal: continue with SIGHUP even if device deactivation partially failed
+	}
+
+	// Rebuild the full user pool (deactivated user's devices are now excluded)
+	// and push one SIGHUP to evict them from the running sing-box.
+	uuids, err := db.GetAllActiveDeviceUsers(ctx)
+	if err != nil {
+		slog.Error("KickUserSessions: failed to get active device UUIDs", "err", err)
+		// Do not write a random UUID — preserve last known state.
+		// The server will sync correctly on the next login or restart.
+		return nil
+	}
+	deviceUsers := make([]singbox.DeviceUser, len(uuids))
+	for i, u := range uuids {
+		deviceUsers[i] = singbox.DeviceUser{UUID: u}
+	}
+	if err := singbox.SyncUsers(cfg.SingBox.ConfigPath, deviceUsers); err != nil {
+		slog.Error("KickUserSessions: SyncUsers failed", "err", err)
+	}
 	return nil
 }
+
+
 
 // ── User Limits ───────────────────────────────────────────────────────────────
 
@@ -459,4 +496,29 @@ func GenCode() string {
 		buf[i] = codeAlphabet[n.Int64()]
 	}
 	return string(buf)
+}
+
+// ── Health API (P3) ───────────────────────────────────────────────────────────
+
+// APIHealth returns the health of all configured outbound paths.
+// GET /admin/api/health — used by the admin dashboard outbound status panel.
+// Modeled after v2ray-core's Observatory module output.
+func (h *AdminHandler) APIHealth(c *fiber.Ctx) error {
+	if h.HealthMonitor == nil {
+		return c.JSON(fiber.Map{"outbounds": []struct{}{}})
+	}
+	results := h.HealthMonitor.GetAll()
+	overall := "ok"
+	for _, r := range results {
+		if r.Status == "down" {
+			overall = "down"
+			break
+		} else if r.Status == "degraded" && overall == "ok" {
+			overall = "degraded"
+		}
+	}
+	return c.JSON(fiber.Map{
+		"status":    overall,
+		"outbounds": results,
+	})
 }

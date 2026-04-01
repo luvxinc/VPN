@@ -70,14 +70,65 @@ func (d *DB) GetUserByUsername(ctx context.Context, username string) (id uuid.UU
 	return
 }
 
-// GetDeviceByFingerprint returns (id, isActive) or pgx.ErrNoRows.
-func (d *DB) GetDeviceByFingerprint(ctx context.Context, fingerprint string) (id uuid.UUID, active bool, userID uuid.UUID, err error) {
+// GetDeviceByFingerprint returns (id, isActive, userID, vlessUUID) or pgx.ErrNoRows.
+// vlessUUID may be empty for legacy rows that predate migration_003.
+func (d *DB) GetDeviceByFingerprint(ctx context.Context, fingerprint string) (id uuid.UUID, active bool, userID uuid.UUID, vlessUUID string, err error) {
 	row := d.pool.QueryRow(ctx,
-		"SELECT id, is_active, user_id FROM devices WHERE device_fingerprint=$1",
+		"SELECT id, is_active, user_id, COALESCE(vless_uuid, '') FROM devices WHERE device_fingerprint=$1",
 		fingerprint,
 	)
-	err = row.Scan(&id, &active, &userID)
+	err = row.Scan(&id, &active, &userID, &vlessUUID)
 	return
+}
+
+// AssignDeviceUUID stores a stable VLESS UUID for a device.
+// Called once on first device registration (or for legacy devices without a UUID).
+// The UUID is permanent until RotateDeviceUUID is called (i.e., on kick).
+func (d *DB) AssignDeviceUUID(ctx context.Context, deviceID uuid.UUID, vlessUUID string) error {
+	_, err := d.pool.Exec(ctx,
+		"UPDATE devices SET vless_uuid=$1 WHERE id=$2",
+		vlessUUID, deviceID,
+	)
+	return err
+}
+
+// RotateDeviceUUID replaces a device's VLESS UUID with a newly generated one.
+// Called by KickUserSessions to immediately invalidate the existing VPN tunnel.
+// Returns the new UUID so the caller can update the sing-box config.
+func (d *DB) RotateDeviceUUID(ctx context.Context, deviceID uuid.UUID, newUUID string) error {
+	_, err := d.pool.Exec(ctx,
+		"UPDATE devices SET vless_uuid=$1 WHERE id=$2",
+		newUUID, deviceID,
+	)
+	return err
+}
+
+// GetAllActiveDeviceUsers returns the VLESS UUID for every active device
+// that belongs to an active user. Used to build the full user list for
+// the sing-box config (multi-user SyncUsers call).
+func (d *DB) GetAllActiveDeviceUsers(ctx context.Context) ([]string, error) {
+	rows, err := d.pool.Query(ctx,
+		`SELECT d.vless_uuid
+		 FROM devices d
+		 JOIN users u ON u.id = d.user_id
+		 WHERE d.is_active = true
+		   AND u.is_active = true
+		   AND d.vless_uuid IS NOT NULL
+		   AND d.vless_uuid != ''`,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []string
+	for rows.Next() {
+		var u string
+		if err := rows.Scan(&u); err != nil {
+			return nil, err
+		}
+		out = append(out, u)
+	}
+	return out, rows.Err()
 }
 
 // UpsertDevice inserts or re-activates a device. Returns (id, isActive).
@@ -176,6 +227,19 @@ func (d *DB) DeactivateUserSessions(ctx context.Context, userID uuid.UUID) error
 	)
 	return err
 }
+
+// DeactivateUserDevices marks all devices belonging to a user as inactive (is_active=false).
+// Called by KickUserSessions to remove the user's devices from the active device pool,
+// ensuring GetAllActiveDeviceUsers excludes them from the sing-box user pool.
+// The device UUID is preserved so the user can re-register without losing their identity.
+func (d *DB) DeactivateUserDevices(ctx context.Context, userID uuid.UUID) error {
+	_, err := d.pool.Exec(ctx,
+		"UPDATE devices SET is_active=false WHERE user_id=$1",
+		userID,
+	)
+	return err
+}
+
 
 // UpdateSessionHeartbeat refreshes last_heartbeat_at for an active session.
 // Called by the /status endpoint so stale sessions can be detected.

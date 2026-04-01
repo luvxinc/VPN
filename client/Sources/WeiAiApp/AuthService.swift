@@ -222,6 +222,9 @@ final class AuthService: NSObject {
         }
         var req = URLRequest(url: url, timeoutInterval: 10)
         req.httpMethod = "GET"
+        if let token = KeychainHelper.load(.accessToken) {
+            req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        }
         session.dataTask(with: req) { data, response, _ in
             guard let http = response as? HTTPURLResponse, http.statusCode == 200,
                   let data = data,

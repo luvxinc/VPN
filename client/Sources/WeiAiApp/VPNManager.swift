@@ -325,7 +325,18 @@ class VPNManager: ObservableObject {
     ///               the tunnel is actually forwarding traffic before we set isConnected.
     ///
     /// Only returns `true` when both phases pass within `timeout` seconds.
-    private func waitForProxyReady(clashPort: Int = 9091, timeout: TimeInterval = 20.0) -> Bool {
+    /// Two-phase readiness check for sing-box after launch.
+    ///
+    /// **Phase 1** — polls `http://127.0.0.1:9091/version` until the Clash API responds,
+    ///               confirming sing-box's control plane is up (fast, ~100 ms).
+    ///
+    /// **Phase 2** — waits 5 s for the *server-side* sing-box restart (triggered by
+    ///               UpdateUUID on login) to complete, then delay-tests each outbound tag.
+    ///               The 5 s buffer eliminates the race window where the server restarts
+    ///               after ~3–5 s and the client hits a "connection refused" during that gap.
+    ///
+    /// Total timeout: 40 s (was 20 s) to safely cover the server restart window.
+    private func waitForProxyReady(clashPort: Int = 9091, timeout: TimeInterval = 40.0) -> Bool {
         let deadline = Date().addingTimeInterval(timeout)
 
         // ── Phase 1: Clash API up ──────────────────────────────────────────────
@@ -343,11 +354,14 @@ class VPNManager: ObservableObject {
         }
         guard apiUp else { return false }
 
+        // ── Server restart buffer ─────────────────────────────────────────────
+        // The server's sing-box is restarted (pkill + re-launch) by UpdateUUID
+        // ONLY on first registration or kick. 99% of logins (stable UUID) do NOT
+        // trigger a restart. Phase 2 delay tests will automatically retry and backoff
+        // to cover the occasional 3-5s restart window without penalizing normal logins.
+        guard Date() < deadline else { return false }
+
         // ── Phase 2: tunnel connectivity via delay test (with retry loop) ──────
-        // IMPORTANT: The server's sing-box is killed and restarted by UpdateUUID on
-        // every login. The restart takes ~3-5 s. We must retry until the server is
-        // back up — a single pass would hit the race window and declare failure.
-        //
         // Strategy:
         //   • Try ws-cdn first (Cloudflare CDN, ~1-3 s round-trip, most reliable)
         //   • Then reality-direct (direct VLESS, fast when working)

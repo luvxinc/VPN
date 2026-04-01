@@ -53,9 +53,12 @@ type CertsConfig struct {
 }
 
 type SingBoxConfig struct {
-	ConfigPath  string `yaml:"config_path"`
-	BinaryPath  string `yaml:"binary_path"`
-	ClashAPIURL string `yaml:"clash_api_url"`
+	ConfigPath   string   `yaml:"config_path"`
+	BinaryPath   string   `yaml:"binary_path"`
+	ClashAPIURL  string   `yaml:"clash_api_url"`
+	// P3: outbound proxy tags to health-check (e.g. ["ws-cdn", "reality-direct"]).
+	// Reported at GET /admin/api/health.
+	OutboundTags []string `yaml:"outbound_tags"`
 }
 
 type GeoIPConfig struct {
